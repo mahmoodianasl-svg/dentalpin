@@ -121,7 +121,6 @@ export default defineNuxtConfig({
       { code: 'ta', name: 'தமிழ்', file: 'ta.json' }
     ],
     defaultLocale: 'en',
-    lazy: true,
     langDir: 'locales',
     strategy: 'no_prefix',
     detectBrowserLanguage: false

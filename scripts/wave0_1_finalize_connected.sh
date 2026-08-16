@@ -20,7 +20,10 @@ python3 - "$ROOT/frontend/package.json" <<'EOF_NODE_PACKAGE'
 import json, pathlib, sys
 p=pathlib.Path(sys.argv[1]); d=json.loads(p.read_text())
 d['dependencies']['nuxt']='4.5.1'
+d['dependencies']['@nuxtjs/i18n']='10.6.0'
 d['devDependencies']['@types/node']='24.13.3'
+d['devDependencies']['@nuxt/test-utils']='4.1.0'
+d['devDependencies']['vitest']='4.1.10'
 p.write_text(json.dumps(d, indent=2)+'\n')
 EOF_NODE_PACKAGE
 cd "$ROOT/frontend"
