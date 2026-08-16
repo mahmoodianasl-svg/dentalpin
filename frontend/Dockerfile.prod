@@ -1,4 +1,6 @@
-FROM node:20-alpine AS builder
+ARG NODE_VERSION=24.19.0
+ARG NODE_VARIANT=alpine3.24
+FROM node:${NODE_VERSION}-${NODE_VARIANT} AS builder
 
 ARG API_BASE_URL=http://localhost:8000
 ENV API_BASE_URL=$API_BASE_URL
@@ -6,7 +8,7 @@ ENV API_BASE_URL=$API_BASE_URL
 WORKDIR /app
 
 COPY frontend/package*.json ./
-RUN npm install --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 
 COPY backend/app/modules /module_layers
 
@@ -16,7 +18,7 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
 
-FROM node:20-alpine
+FROM node:${NODE_VERSION}-${NODE_VARIANT}
 
 WORKDIR /app
 
