@@ -2,6 +2,8 @@ name: Wave 0.1 Finalize & Verify
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
