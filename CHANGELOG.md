@@ -1,0 +1,246 @@
+# Changelog
+
+All notable changes to DentalPin are documented here. Format loosely
+follows [Keep a Changelog](https://keepachangelog.com/) and the project
+uses [Semantic Versioning](https://semver.org/).
+
+The `v2.0` line is the first to ship with the post-Fase-B module
+architecture: the monolithic `clinical` module is gone, replaced by
+four purpose-built modules, and every official module now ships its
+frontend as a Nuxt layer under its own Python package.
+
+## [2.2.1] - 2026-08-09
+
+### Fixed
+
+- **Plan and quote lifecycles drifted apart on reject/resend/cancel**
+  (#162). Three sync gaps reported during functional testing of the
+  renegotiation workflow:
+  - Reactivating a rejected treatment plan and confirming it again
+    never generated a new quote — the plan stayed tied to the old
+    rejected one. Re-confirming now provisions a fresh quote and
+    relinks the plan (the documented renegotiation flow had the same
+    stale-link bug and is fixed too).
+  - Accepting a new quote version (the *Resend* flow) did not advance
+    the plan: the version chain never carried the plan link. The plan
+    now follows the new version, and a plan closed as *rejected by the
+    patient* returns to *In progress* automatically when the patient
+    accepts the resent quote.
+  - Cancelling a quote directly from the Quotes module left the plan
+    stuck in *Pending acceptance* forever. The linked plan now returns
+    to *Draft*, ready to edit and re-confirm.
+- **Reopening a plan whose quote had expired returned a 500.** The
+  invalid `expired → cancelled` budget transition is now skipped.
+- **Terminal quotes no longer freeze their plan.** Only *sent* or
+  *accepted* quotes lock the plan for editing; cancelled, rejected and
+  expired ones are history.
+
+### Added
+
+- **"Resend" button on the quote detail page** — clones a rejected,
+  expired or cancelled quote into a new draft version (with a fresh
+  public link) and navigates to it. Available in all four UI languages.
+
+## [2.2.0] - 2026-08-01
+
+### Added
+
+- **Portuguese (pt-PT) translation.** The fourth UI language after
+  Spanish, English and French. Ships the ~2,340-key core locale plus a
+  `pt.json` for each of the eleven module layers, so every screen the
+  modules contribute is covered too, and the language appears in
+  Settings → Account → Language with no further configuration. Patient
+  communications can also be switched to Portuguese: the clinic-wide
+  communications language accepts `pt` and the full set of transactional
+  email templates (appointment confirmation / reminder / cancellation,
+  quote sent / accepted, welcome, morning digest, Verifactu alerts) is
+  translated. Nuxt UI's own `pt` locale is wired in so date pickers and
+  built-in component strings follow. Backend catalog-name resolution
+  gained a `pt` fallback, so treatments named in Portuguese resolve on
+  invoices, plans, the timeline and the agent tools rather than silently
+  falling back to the internal code.
+
+  Not included: the user manual and the demo seed data stay on
+  `es/en/fr`, matching how French shipped.
+
+### Fixed
+
+- **Multi-session treatments were charged double.** Completing the last
+  step of a multi-session treatment (e.g. an implant with surgery,
+  abutment and crown steps) re-recorded the full parent price on top of
+  the amounts already charged per session, so a 1,100 € treatment showed
+  as 2,200 € owed. Each session now books only its own amount and the
+  total always equals the sum of the sessions. The reverse flow is also
+  covered: marking the treatment performed from the odontogram charges
+  it once in full and auto-cancels its pending sessions. **Upgrading
+  repairs affected ledgers automatically** — the migration removes the
+  duplicate charges this bug created; no manual action needed.
+
+- Published images were `amd64` only, so `docker compose up` failed at the
+  very first command on Apple Silicon and on ARM VPS instances (Hetzner's
+  CAX line, the cheapest in Europe and popular with self-hosters) with a
+  bare `no matching manifest for linux/arm64/v8`. Each architecture now
+  builds on its own native runner and a merge step publishes one manifest
+  list per image, verified to carry both before the release is cut.
+
+## [2.1.0] - 2026-07-28
+
+First release cut through the automated pipeline. The eleven modules that
+landed since 2.0.0 — payments, copilot, verifactu, recalls, schedules,
+notifications, periodontogram, clinical_notes, accounting_export,
+migration_import, whatsapp_kapso — are listed per-PR in the generated
+release notes and documented in their own module CHANGELOGs; the
+narrative version of that work belongs to the next major.
+
+### Added
+
+- **Prebuilt images and a one-command install.** Tagging a release now
+  builds and publishes `ghcr.io/martinezsalmeron/dentalpin-backend` and
+  `-frontend`, and publishes the GitHub Release with notes taken from
+  this file. `docker-compose.prod.yml` runs the stack straight from those
+  images with no clone and no build; a Caddy container fronts both
+  services on a single origin, so TLS is provisioned automatically from
+  `PUBLIC_URL` and there is no CORS to configure. One image serves every
+  deployment — Nuxt overrides `runtimeConfig.public.apiBaseUrl` from
+  `NUXT_PUBLIC_API_BASE_URL` at boot rather than baking the URL in.
+
+- **First-time setup assistant** (issue #85). A fresh install (no users)
+  now bootstraps from the UI: `GET /api/v1/auth/setup/status` reports
+  whether the system is initialized, and `POST /api/v1/auth/setup`
+  atomically creates the first clinic + admin user + admin membership and
+  returns tokens. The endpoint is self-closing (409 once any account
+  exists). The frontend redirects unauthenticated visitors of an empty
+  system to a 2-step `/setup` wizard (admin account → clinic basics);
+  remaining configuration is handled by the existing onboarding checklist.
+
+### Changed
+
+- Removed the public `POST /api/v1/auth/register` endpoint. It created
+  orphan users with no clinic membership (unusable, and unused by the UI);
+  the first-run setup assistant replaces it.
+
+- Alembic history squashed. The 29-migration main-linear chain
+  inherited from Fase A collapsed into one `0001_core_initial` for
+  core tables + 11 module-owned initials under
+  `backend/app/modules/<name>/migrations/versions/<mod>_0001_initial.py`.
+  Each module's initial lives in its own package so community module
+  authors can pattern-match their own migrations on the official
+  examples. Cross-module FKs live on the "late" side — the only
+  circular dep (`appointment_treatments.planned_treatment_item_id`
+  → `planned_treatment_items`) is created in `tp_0001` after both
+  tables exist. Round-trip `upgrade head → downgrade base → upgrade
+  head` is clean and `test_alembic_roundtrip` no longer xfails.
+
+### Fixed
+
+- `docker-compose.yml` hardcoded `http://localhost:8000` as the frontend's
+  API base (build arg + runtime env), so the documented `API_BASE_URL` in
+  `.env` had no effect and the app was unreachable from any device other
+  than the Docker host — the browser resolved `localhost` to itself.
+  Both now read `${API_BASE_URL:-http://localhost:8000}`.
+
+- Clinic timezone selector only offered 15 curated European/American
+  zones. It now lists the runtime's full IANA set (`Intl.supportedValuesOf`)
+  in a searchable `USelectMenu`; the backend already validated against
+  `zoneinfo`, so any IANA id was accepted all along.
+
+## [2.0.0] - 2026-04-21
+
+First release on the post-Fase-B module architecture. Covers the
+full Fase B refactor (B.1 → B.6), the hardening pass (B.7), and the
+Playwright E2E smoke suite (B.8). `main` is stable against the
+12-module layout; the `clinical` module is gone.
+
+### Added
+
+- **Module `patients`** (`auto_install: True, removable: False`) —
+  Patient identity, demographics, billing info. Endpoints under
+  `/api/v1/patients/*`. Permissions under `patients.*`.
+- **Module `patients_clinical`** (`auto_install: True, removable: True`)
+  — normalized medical history with 7 tables
+  (`patients_clinical_medical_context`, `_allergy`, `_medication`,
+  `_systemic_disease`, `_surgical_history`, `_emergency_contact`,
+  `_legal_guardian`). Endpoints under `/api/v1/patients_clinical/*`.
+  Alerts (`/alerts`) now derive from real rows — actual SQL analytics
+  over allergies / diseases is possible.
+- **Module `agenda`** (`auto_install: True, removable: True`) —
+  Appointment, AppointmentTreatment, Cabinet. Cabinets promoted from
+  the `clinic.cabinets` JSONB to a real table with FK
+  (`appointments.cabinet_id`). Endpoints under `/api/v1/agenda/*`.
+- **Module `patient_timeline`** (`auto_install: True, removable: True`)
+  — cross-module audit log, populated via event subscriptions.
+  Endpoints under `/api/v1/patient_timeline/*`.
+- Clinic metadata endpoints moved into core auth:
+  `GET/PUT /api/v1/auth/clinics`.
+- Nuxt layer support for every official module. Each module now ships
+  `<module>/frontend/{pages,components,composables,i18n}` and is
+  auto-discovered at boot via `modules.json`.
+- New pytest marker `alembic_roundtrip` for the full
+  `base → head → base → head` migration-chain check; excluded from
+  the default pytest run, executed as a dedicated CI step.
+- CI pipeline gains `manifest-consistency` and `frontend-typecheck`
+  jobs (Nuxt `prepare` pass that catches broken Vue/TS imports across
+  module layers).
+- Playwright browser E2E suite under `frontend/tests/e2e/` — 16
+  smoke tests covering admin navigation across every module layer,
+  patient detail rendering, and per-role sidebar visibility. CI `e2e`
+  job boots docker-compose + seeds demo + runs Playwright.
+  `./scripts/e2e.sh` wrapper for local runs.
+
+### Changed
+
+- **Breaking — API paths**
+  - `GET /api/v1/clinical/patients/*` → `GET /api/v1/patients/*`
+  - `.../medical-history`, `.../alerts`, `.../emergency-contact`,
+    `.../legal-guardian` → `/api/v1/patients_clinical/patients/{id}/...`
+  - `GET /api/v1/clinical/appointments/*` → `/api/v1/agenda/appointments/*`
+  - `GET /api/v1/clinical/clinics/*` → `/api/v1/auth/clinics/*`
+  - Patient timeline read at `/api/v1/patient_timeline/patients/{id}`
+- **Breaking — permissions**
+  - `clinical.patients.*` → `patients.*`
+  - `clinical.patients.medical.*` → `patients_clinical.medical.*`
+  - `clinical.patients.emergency.*` → `patients_clinical.emergency.*`
+  - `clinical.appointments.*` → `agenda.appointments.*`
+  - `clinical.appointments.cabinets.*` → `agenda.cabinets.*`
+- Every official module manifest's `depends` rewritten against the
+  real modules (patients / agenda / catalog / budget) instead of the
+  now-removed `clinical`.
+- `Patient.active_alerts` property removed (alerts compute via
+  `PatientsClinicalService.compute_alerts`).
+- Dashboard + Settings sidebar entries are host-owned (see
+  `frontend/app/utils/moduleRegistry.ts::HOST_NAV`); modules no
+  longer publish `/` or `/settings`.
+- Auth rate limiter only activates in `ENVIRONMENT=production`.
+  Dev + test runs were tripping the 5/min `/login` cap during manual
+  reloads and Playwright runs; production semantics unchanged.
+
+### Removed
+
+- **Breaking — module `clinical`** — fully deleted. All downstream
+  depends point at the real owning modules.
+- `patients.medical_history`, `patients.emergency_contact`,
+  `patients.legal_guardian` JSONB columns dropped — data migrated to
+  the normalized `patients_clinical_*` tables in
+  `w3x4y5z6a7b8_add_patients_clinical_tables.py`.
+- `clinic.cabinets` JSONB column dropped — replaced by the `cabinets`
+  table in `v2w3x4y5z6a7_add_cabinets_table.py`.
+
+### Frontend layer conventions
+
+- Each layer's `nuxt.config.ts` must register
+  `components: [{path: './components', pathPrefix: false}]`; the host
+  overrides Nuxt's default auto-scan so this is load-bearing.
+- Cross-layer type imports use `~~/app/types` (rootDir-relative, = host
+  frontend) instead of `~/types` (srcDir-relative, which would scope
+  to the current layer).
+
+### Known gaps (deferred)
+
+- Alembic chain still lives as a single main-linear list. The squash
+  that breaks it into per-module branches (one clean initial per
+  module) is deferred; `test_alembic_roundtrip` is `xfail` until
+  then and exists purely to hold the infrastructure in place.
+- Docs (`docs/diagrams/*`, `CLAUDE.md` examples) still reference the
+  old `/api/v1/clinical/*` paths in a handful of illustrative spots;
+  the primary `docs/technical/creating-modules.md` and `docs/technical/core-api.md` are
+  up to date.
