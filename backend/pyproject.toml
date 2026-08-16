@@ -15,10 +15,10 @@ dependencies = [
     "asyncpg>=0.29.0",
     "pydantic[email]>=2.5.0",
     "pydantic-settings>=2.1.0",
-    "python-jose[cryptography]>=3.3.0",
+    "python-jose[cryptography]>=3.5.0",
     "cryptography>=42.0.0",
     "bcrypt>=4.0.0",
-    "python-multipart>=0.0.6",
+    "python-multipart>=0.0.32",
     "alembic>=1.13.0",
     "slowapi>=0.1.9",
     "weasyprint>=62.0",
@@ -47,7 +47,7 @@ dependencies = [
     # copilot agentic layer: OpenAI is the only live LLM provider in v1
     # (app/core/llm/). The Provider protocol is vendor-agnostic, so
     # Anthropic/Ollama slot in later without touching callers.
-    "openai>=1.40",
+    "openai>=1.40,<2.0",
 ]
 
 [project.optional-dependencies]
