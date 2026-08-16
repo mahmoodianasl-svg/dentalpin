@@ -1,0 +1,286 @@
+name: Wave 0.1 Finalize & Verify
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24.19.0"
+  PYTHON_VERSION: "3.11.15"
+  UV_VERSION: "0.12.1"
+  SYFT_VERSION: "1.51.0"
+  GRYPE_VERSION: "0.116.1"
+  POSTGRES_PASSWORD: testpass
+  SECRET_KEY: ci-secret-key-for-wave0-1
+  W0_EVIDENCE_DIR: ${{ github.workspace }}/artifacts/wave0_1
+
+jobs:
+  finalize-and-verify:
+    name: Generate locks, test, build, SBOM, scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: dental_clinic_test
+          POSTGRES_USER: dental
+          POSTGRES_PASSWORD: testpass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            docs/portal/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Finalize reviewed dependency baseline
+        run: ./scripts/wave0_1_finalize_connected.sh
+
+      - name: Strict baseline gate
+        run: python scripts/check_wave0_1_baseline.py --strict
+
+      - name: Capture generated lock patch
+        run: |
+          mkdir -p "$W0_EVIDENCE_DIR"
+          git diff -- \
+            frontend/package.json frontend/package-lock.json \
+            backend/requirements.lock backend/requirements-dev.lock \
+            backend/dependency-lock-metadata.json \
+            > "$W0_EVIDENCE_DIR/generated-locks.patch"
+          git diff --name-status > "$W0_EVIDENCE_DIR/generated-files.txt"
+
+      - name: Install locked backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip install --no-deps -e .
+
+      - name: Backend lint and format gate
+        run: |
+          set -o pipefail
+          ruff check backend/ | tee "$W0_EVIDENCE_DIR/backend-ruff-check.log"
+          ruff format --check backend/ | tee "$W0_EVIDENCE_DIR/backend-ruff-format.log"
+
+      - name: Backend tests
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://dental:testpass@localhost:5432/dental_clinic_test
+          SECRET_KEY: ${{ env.SECRET_KEY }}
+          ENVIRONMENT: test
+          TESTING: "true"
+        run: |
+          set -o pipefail
+          python -m pytest -v --tb=short | tee "$W0_EVIDENCE_DIR/backend-pytest.log"
+
+      - name: Alembic round-trip tests
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://dental:testpass@localhost:5432/dental_clinic_test
+          SECRET_KEY: ${{ env.SECRET_KEY }}
+          ENVIRONMENT: test
+          TESTING: "true"
+        run: |
+          set -o pipefail
+          python -m pytest -v -m alembic_roundtrip --tb=short | tee "$W0_EVIDENCE_DIR/alembic-roundtrip.log"
+
+      - name: Static manifest and docs gates
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://dental:testpass@localhost:5432/stub
+          SECRET_KEY: ci-stub
+          ENVIRONMENT: test
+          TESTING: "true"
+        run: |
+          python -m pytest tests/test_module_manifest.py \
+                           tests/test_module_manifests_consistency.py \
+                           tests/test_manifest_validator.py \
+                           tests/test_module_loader.py \
+                           tests/test_module_docs.py \
+                           -v --tb=short
+          python scripts/generate_catalogs.py --check
+          python scripts/check_docs_coverage.py --strict
+          cd ..
+          python scripts/check_docs_layout.py
+
+      - name: Frontend lint/type/unit tests
+        working-directory: frontend
+        run: |
+          mkdir -p module_layers
+          echo '{"layers":[],"modules":[],"version":1}' > modules.json
+          npm run lint
+          npm run typecheck
+          npm run test -- --run
+
+      - name: Docs portal build
+        working-directory: docs/portal
+        run: npm run build
+
+      - name: Build backend container
+        run: docker build -t dentalpin-backend:w0.1 ./backend
+
+      - name: Build frontend production container
+        run: docker build -f frontend/Dockerfile.prod -t dentalpin-frontend:w0.1 .
+
+      - name: Install pinned Syft and Grype
+        run: |
+          set -euo pipefail
+          curl -fsSLo /tmp/syft-checksums.txt "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_checksums.txt"
+          curl -fsSLo "/tmp/syft_${SYFT_VERSION}_linux_amd64.tar.gz" "https://github.com/anchore/syft/releases/download/v${SYFT_VERSION}/syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+          (cd /tmp && grep "  syft_${SYFT_VERSION}_linux_amd64.tar.gz$" syft-checksums.txt | sha256sum -c -)
+          tar -xzf "/tmp/syft_${SYFT_VERSION}_linux_amd64.tar.gz" -C /tmp syft
+          sudo install -m 0755 /tmp/syft /usr/local/bin/syft
+          curl -fsSLo /tmp/grype-checksums.txt "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_checksums.txt"
+          curl -fsSLo "/tmp/grype_${GRYPE_VERSION}_linux_amd64.tar.gz" "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          (cd /tmp && grep "  grype_${GRYPE_VERSION}_linux_amd64.tar.gz$" grype-checksums.txt | sha256sum -c -)
+          tar -xzf "/tmp/grype_${GRYPE_VERSION}_linux_amd64.tar.gz" -C /tmp grype
+          sudo install -m 0755 /tmp/grype /usr/local/bin/grype
+          syft version
+          grype version
+
+      - name: Generate image SBOMs
+        run: |
+          syft docker:dentalpin-backend:w0.1 -o cyclonedx-json="$W0_EVIDENCE_DIR/backend.cdx.json"
+          syft docker:dentalpin-frontend:w0.1 -o cyclonedx-json="$W0_EVIDENCE_DIR/frontend.cdx.json"
+
+      - name: Vulnerability scan images
+        run: |
+          set +e
+          grype docker:dentalpin-backend:w0.1 -o json > "$W0_EVIDENCE_DIR/backend-grype.json"
+          grype docker:dentalpin-frontend:w0.1 -o json > "$W0_EVIDENCE_DIR/frontend-grype.json"
+          grype docker:dentalpin-backend:w0.1 --fail-on high | tee "$W0_EVIDENCE_DIR/backend-grype.txt"
+          BACKEND_GRYPE_RC=${PIPESTATUS[0]}
+          grype docker:dentalpin-frontend:w0.1 --fail-on high | tee "$W0_EVIDENCE_DIR/frontend-grype.txt"
+          FRONTEND_GRYPE_RC=${PIPESTATUS[0]}
+          printf '%s\n' "$BACKEND_GRYPE_RC" > "$W0_EVIDENCE_DIR/backend-grype.exitcode"
+          printf '%s\n' "$FRONTEND_GRYPE_RC" > "$W0_EVIDENCE_DIR/frontend-grype.exitcode"
+          exit 0
+
+      - name: Prepare isolated E2E database
+        env:
+          DATABASE_URL_ADMIN: postgresql://dental:testpass@localhost:5432/postgres
+        run: |
+          python - <<'PY_E2E_DB'
+          import asyncio, asyncpg, os
+          async def main():
+              conn=await asyncpg.connect(os.environ['DATABASE_URL_ADMIN'])
+              try:
+                  await conn.execute('DROP DATABASE IF EXISTS dental_clinic_e2e WITH (FORCE)')
+                  await conn.execute('CREATE DATABASE dental_clinic_e2e')
+              finally:
+                  await conn.close()
+          asyncio.run(main())
+          PY_E2E_DB
+
+      - name: Migrate and seed E2E database
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://dental:testpass@localhost:5432/dental_clinic_e2e
+          SECRET_KEY: ${{ env.SECRET_KEY }}
+          ENVIRONMENT: development
+        run: |
+          alembic upgrade heads
+          PYTHONPATH=. python scripts/seed_demo.py --lang es
+
+      - name: Start E2E backend
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://dental:testpass@localhost:5432/dental_clinic_e2e
+          SECRET_KEY: ${{ env.SECRET_KEY }}
+          ENVIRONMENT: development
+          ALLOWED_ORIGINS: http://localhost:3000
+        run: |
+          nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 > "$W0_EVIDENCE_DIR/backend-e2e.log" 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/health >/dev/null; then echo backend-ready; break; fi
+            sleep 2
+          done
+          curl -sf http://localhost:8000/health >/dev/null
+
+      - name: Install Playwright browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Generate E2E module-layer paths
+        working-directory: frontend
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root=Path(os.environ['GITHUB_WORKSPACE'])
+          modules_dir=root/'backend/app/modules'
+          entries=[]
+          for m in sorted(modules_dir.iterdir()):
+              layer=m/'frontend'
+              if layer.is_dir():
+                  entries.append({'name':m.name,'path':str(layer.resolve())})
+          Path('modules.json').write_text(json.dumps({'layers':[e['path'] for e in entries], 'modules':entries, 'version':1}, indent=2))
+          PY
+
+      - name: Start frontend and run E2E
+        working-directory: frontend
+        env:
+          NUXT_PUBLIC_API_BASE_URL: http://localhost:8000
+          API_BASE_URL_SERVER: http://localhost:8000
+          NITRO_HOST: 0.0.0.0
+          NITRO_PORT: "3000"
+        run: |
+          nohup npm run dev > "$W0_EVIDENCE_DIR/nuxt-dev.log" 2>&1 &
+          for i in $(seq 1 120); do
+            if [ "$(curl -sf -o /dev/null -w '%{http_code}' http://localhost:3000/login)" = "200" ]; then echo frontend-ready; break; fi
+            sleep 2
+          done
+          curl -sf http://localhost:3000/login >/dev/null
+          npx playwright test --reporter=list | tee "$W0_EVIDENCE_DIR/playwright.log"
+
+      - name: Enforce image vulnerability gate
+        run: |
+          test "$(cat "$W0_EVIDENCE_DIR/backend-grype.exitcode")" = "0"
+          test "$(cat "$W0_EVIDENCE_DIR/frontend-grype.exitcode")" = "0"
+
+      - name: Collect runtime and lock evidence
+        if: always()
+        run: |
+          mkdir -p "$W0_EVIDENCE_DIR"
+          python scripts/wave0_1_collect_evidence.py
+          sha256sum "$W0_EVIDENCE_DIR"/* > "$W0_EVIDENCE_DIR/SHA256SUMS.txt" || true
+
+      - name: Upload W0.1 evidence and generated locks
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: dentalpin-w0-1-finalization-${{ github.run_id }}
+          path: |
+            artifacts/wave0_1/
+            backend/requirements.lock
+            backend/requirements-dev.lock
+            backend/dependency-lock-metadata.json
+            frontend/package.json
+            frontend/package-lock.json
+          retention-days: 30
