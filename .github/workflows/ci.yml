@@ -1,0 +1,313 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  dependency-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11.15"
+      - name: Verify reproducible dependency baseline
+        run: python scripts/check_wave0_1_baseline.py --strict
+
+  backend-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11.15"
+
+      - name: Install locked backend tooling
+        working-directory: backend
+        run: python -m pip install --require-hashes -r requirements-dev.lock
+
+      - name: Run ruff check
+        run: ruff check backend/
+
+      - name: Run ruff format check
+        run: ruff format --check backend/
+
+  backend-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: dental_clinic_test
+          POSTGRES_USER: dental
+          POSTGRES_PASSWORD: testpass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://dental:testpass@localhost:5432/dental_clinic_test
+      SECRET_KEY: test-secret-key-for-ci
+      ENVIRONMENT: test
+      TESTING: "true"
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11.15"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip install --no-deps -e .
+
+      - name: Run tests (default set)
+        working-directory: backend
+        run: |
+          python -m pytest -v --tb=short
+
+      - name: Alembic round-trip (base → head → base → head)
+        working-directory: backend
+        run: |
+          python -m pytest -v -m alembic_roundtrip --tb=short
+
+  manifest-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11.15"
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip install --no-deps -e .
+      - name: Validate manifests
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://dental:testpass@localhost:5432/stub
+          SECRET_KEY: ci-stub
+          ENVIRONMENT: test
+          TESTING: "true"
+        run: |
+          python -m pytest tests/test_module_manifest.py \
+                           tests/test_module_manifests_consistency.py \
+                           tests/test_manifest_validator.py \
+                           tests/test_module_loader.py \
+                           tests/test_module_docs.py \
+                           -v --tb=short
+
+  catalog-freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11.15"
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip install --no-deps -e .
+      - name: Check catalogs are fresh
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://dental:testpass@localhost:5432/stub
+          SECRET_KEY: ci-stub
+          ENVIRONMENT: test
+          TESTING: "true"
+        run: python scripts/generate_catalogs.py --check
+      - name: Check docs coverage (--strict)
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://dental:testpass@localhost:5432/stub
+          SECRET_KEY: ci-stub
+          ENVIRONMENT: test
+          TESTING: "true"
+        run: python scripts/check_docs_coverage.py --strict
+
+  docs-layout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11.15"
+      - name: Check docs layout
+        run: python scripts/check_docs_layout.py
+
+  docs-portal-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24.19.0"
+      - name: Install portal dependencies
+        working-directory: docs/portal
+        run: npm ci --no-audit --no-fund
+      - name: Build portal
+        working-directory: docs/portal
+        run: npm run build
+      - name: Verify dist/ output
+        run: test -f docs/portal/.vitepress/dist/index.html
+
+  frontend-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24.19.0"
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Run ESLint
+        working-directory: frontend
+        run: npm run lint
+
+  frontend-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24.19.0"
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Ensure empty modules.json
+        working-directory: frontend
+        run: echo '{"layers":[],"modules":[],"version":1}' > modules.json
+      - name: Nuxt prepare (generates .nuxt type stubs)
+        working-directory: frontend
+        run: npx nuxi prepare
+
+  frontend-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24.19.0"
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Run tests
+        working-directory: frontend
+        run: npm run test
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      POSTGRES_PASSWORD: testpass
+      SECRET_KEY: ci-secret-key-for-e2e
+    steps:
+      - uses: actions/checkout@v5
+      - name: Write .env
+        run: |
+          cat > .env <<EOF
+          POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+          SECRET_KEY=${SECRET_KEY}
+          ENVIRONMENT=development
+          EOF
+      - name: Boot db + backend
+        run: docker compose up -d db backend
+      - name: Wait for backend health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/health > /dev/null; then echo "backend ready"; break; fi
+            sleep 2
+          done
+      - name: Run migrations
+        run: docker compose exec -T backend alembic upgrade heads
+      - name: Seed demo data
+        run: ./scripts/seed-demo.sh --lang es
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24.19.0"
+      - name: Install frontend deps + Playwright browsers
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Generate modules.json with host paths
+        working-directory: frontend
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ["GITHUB_WORKSPACE"])
+          modules_dir = root / "backend/app/modules"
+          entries = []
+          for m in sorted(modules_dir.iterdir()):
+              layer = m / "frontend"
+              if layer.is_dir():
+                  entries.append({"name": m.name, "path": str(layer.resolve())})
+          Path("modules.json").write_text(json.dumps({"layers": [e["path"] for e in entries], "modules": entries, "version": 1}, indent=2))
+          PY
+      - name: Start Nuxt dev in background
+        working-directory: frontend
+        env:
+          NUXT_PUBLIC_API_BASE_URL: http://localhost:8000
+          API_BASE_URL_SERVER: http://localhost:8000
+          NITRO_HOST: 0.0.0.0
+          NITRO_PORT: "3000"
+        run: |
+          nohup npm run dev > /tmp/nuxt.log 2>&1 &
+          echo "nuxt started (pid $!)"
+      - name: Wait for frontend
+        run: |
+          for i in $(seq 1 120); do
+            if [ "$(curl -sf -o /dev/null -w "%{http_code}" http://localhost:3000/login)" = "200" ]; then echo "frontend ready"; break; fi
+            sleep 2
+          done
+          curl -sf -o /dev/null -w "final status: %{http_code}\n" http://localhost:3000/login
+      - name: Run E2E
+        working-directory: frontend
+        run: npx playwright test --reporter=list
+      - name: Upload Nuxt log on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: nuxt-dev-log
+          path: /tmp/nuxt.log
+          retention-days: 7
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 7
+      - name: Upload test-results on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-test-results
+          path: frontend/test-results
+          retention-days: 7
