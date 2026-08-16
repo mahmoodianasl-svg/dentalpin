@@ -1,0 +1,57 @@
+name: W0.1 Commit generated locks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: "24.19.0"
+  PYTHON_VERSION: "3.11.15"
+  UV_VERSION: "0.12.1"
+
+jobs:
+  generate-and-commit:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Generate and verify reviewed locks
+        run: ./scripts/wave0_1_finalize_connected.sh
+
+      - name: Commit generated lock artifacts
+        run: |
+          git config user.name 'DentalPin W0.1 Automation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add \
+            frontend/package.json frontend/package-lock.json \
+            backend/requirements.lock backend/requirements-dev.lock \
+            backend/dependency-lock-metadata.json
+          if git diff --cached --quiet; then
+            echo 'Generated locks are already reproducible and committed.'
+            exit 0
+          fi
+          git commit -m 'build: commit reproducible W0.1 dependency locks'
+          git push origin HEAD:${{ github.head_ref }}
