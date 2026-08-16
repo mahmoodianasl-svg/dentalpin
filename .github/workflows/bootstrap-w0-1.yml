@@ -15,16 +15,33 @@ jobs:
     if: github.repository == 'mahmoodianasl-svg/dentalpin'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout writable fork
+        uses: actions/checkout@v5
+        with:
+          path: fork
+          fetch-depth: 0
+
       - name: Checkout exact audited upstream commit
         uses: actions/checkout@v5
         with:
           repository: martinezsalmeron/dentalpin
           ref: 3cc3a477d88607845ef7e9a960ba6ea9a8ecd7c1
-          fetch-depth: 0
+          path: upstream
+          fetch-depth: 1
 
-      - name: Seed fork main from audited commit
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Copy audited baseline except workflow files
         run: |
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force origin 3cc3a477d88607845ef7e9a960ba6ea9a8ecd7c1:refs/heads/main
+          rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='.github/workflows/' \
+            upstream/ fork/
+
+      - name: Commit audited baseline content
+        working-directory: fork
+        run: |
+          git config user.name 'DentalPin W0.1 Automation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'chore: seed audited DentalPin baseline content'
+          git push origin main
