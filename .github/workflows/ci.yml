@@ -258,6 +258,11 @@ jobs:
         with:
           node-version: "24.19.0"
 
+      - name: Ensure empty modules.json
+        working-directory: frontend
+        run: |
+          echo '{"layers":[],"modules":[],"version":1}' > modules.json
+
       - name: Install dependencies
         working-directory: frontend
         run: npm ci --no-audit --no-fund
