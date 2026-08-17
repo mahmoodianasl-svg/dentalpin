@@ -16,7 +16,9 @@
 #   - TLS:               Coolify (Let's Encrypt)
 
 # ---- Builder ----------------------------------------------------------------
-FROM node:20-alpine AS builder
+ARG NODE_VERSION=24.19.0
+ARG NODE_VARIANT=alpine3.24
+FROM node:${NODE_VERSION}-${NODE_VARIANT} AS builder
 WORKDIR /build
 
 # Copy the entire docs tree so VitePress can read it.
@@ -24,10 +26,8 @@ COPY docs/ ./docs/
 
 WORKDIR /build/docs/portal
 
-# Install deps and build the static site.
-# We use `npm install` rather than `npm ci` until a package-lock.json is
-# committed; the lockfile lands in a follow-up PR once the dep set settles.
-RUN npm install --no-audit --no-fund \
+# Install exactly the dependency graph committed in package-lock.json.
+RUN npm ci --no-audit --no-fund \
  && npm run build
 
 # ---- Runtime ----------------------------------------------------------------

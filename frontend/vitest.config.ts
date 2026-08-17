@@ -1,21 +1,23 @@
-import { defineVitestConfig } from '@nuxt/test-utils/config'
+import { fileURLToPath } from 'node:url'
+import { defineConfig } from 'vitest/config'
 
-export default defineVitestConfig({
-  test: {
-    environment: 'nuxt',
-    globals: true,
-    // Playwright E2E specs live under tests/e2e/. They use their own
-    // test runner (see playwright.config.ts + scripts/e2e.sh) and must
-    // not be picked up by vitest — doing so throws
-    // "Playwright Test did not expect test.describe() to be called here".
-    exclude: ['**/node_modules/**', '**/dist/**', 'tests/e2e/**'],
-    environmentOptions: {
-      nuxt: {
-        mock: {
-          intersectionObserver: true,
-          indexedDb: true
-        }
-      }
+const frontendRoot = fileURLToPath(new URL('.', import.meta.url))
+const appRoot = fileURLToPath(new URL('./app', import.meta.url))
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      '~': appRoot,
+      '@': appRoot,
+      '~~': frontendRoot,
+      '@@': frontendRoot
     }
+  },
+  test: {
+    globals: true,
+    environment: 'node',
+    setupFiles: ['tests/setup/unit.ts'],
+    include: ['tests/**/*.{test,spec}.ts'],
+    exclude: ['**/node_modules/**', '**/dist/**', 'tests/e2e/**']
   }
 })

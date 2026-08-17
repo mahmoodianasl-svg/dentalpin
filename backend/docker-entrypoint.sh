@@ -5,10 +5,16 @@ if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
   # One-time heal for the Fase C schedules-branch rewire (issue #56):
   # DBs bootstrapped while schedules lived on the main linear chain have
   # the schedules tables but no row in alembic_version for the new
-  # branch. Stamp sch_0001 so "alembic upgrade heads" is a no-op instead
-  # of re-creating tables that already exist.
-  PG_URL="$(python -c 'from app.config import settings; print(settings.DATABASE_URL.replace("postgresql+asyncpg://","postgresql://"))')"
-  psql "$PG_URL" -v ON_ERROR_STOP=1 <<'SQL' || true
+  # branch. Use asyncpg, which is already a locked runtime dependency,
+  # instead of shipping the PostgreSQL CLI solely for this one statement.
+  python - <<'PY' || true
+import asyncio
+
+import asyncpg
+
+from app.config import settings
+
+SQL = """
 DO $$
 BEGIN
   IF EXISTS (
@@ -22,7 +28,20 @@ BEGIN
   END IF;
 END
 $$;
-SQL
+"""
+
+
+async def main() -> None:
+    dsn = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+    conn = await asyncpg.connect(dsn)
+    try:
+        await conn.execute(SQL)
+    finally:
+        await conn.close()
+
+
+asyncio.run(main())
+PY
 
   echo "[entrypoint] Running alembic upgrade heads..."
   alembic upgrade heads

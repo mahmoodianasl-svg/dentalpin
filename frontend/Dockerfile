@@ -1,5 +1,7 @@
 # Build stage
-FROM node:20-alpine AS builder
+ARG NODE_VERSION=24.19.0
+ARG NODE_VARIANT=alpine3.24
+FROM node:${NODE_VERSION}-${NODE_VARIANT} AS builder
 
 WORKDIR /app
 
@@ -11,7 +13,7 @@ ENV API_BASE_URL=$API_BASE_URL
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci --no-audit --no-fund
 
 # Copy source code
 COPY . .
@@ -20,7 +22,7 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine
+FROM node:${NODE_VERSION}-${NODE_VARIANT}
 
 WORKDIR /app
 

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "generator": {
+    "uv": "0.12.1",
+    "python": "3.11.15"
+  },
+  "pyproject_sha256": "78e9a3befab1adaf810f4f4e31aed99049f1a87e02759b60b24356033812c8a2",
+  "requirements_lock_sha256": "c615f5f7478b35e45584c95e103888f77b24b7da497d025071cdb9e473c06dec",
+  "requirements_dev_lock_sha256": "92d64b144099d9c24d4c8b24549d68f0a3117356bad0adb58007600368e5c80e"
+}
