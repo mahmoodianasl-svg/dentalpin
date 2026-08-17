@@ -28,6 +28,8 @@ from sqlalchemy.schema import MetaData
 from app.config import settings
 from app.schema_registry import build_migration_metadata
 
+pytestmark = pytest.mark.schema_parity
+
 
 def _operation_name(diff: Any) -> str:
     """Return a compact operation name for an Alembic comparison diff."""
