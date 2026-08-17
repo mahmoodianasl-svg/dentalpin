@@ -1,0 +1,50 @@
+name: Wave 0.2 Schema Parity
+
+on:
+  push:
+    branches: [agent/w0-2-schema-parity]
+  pull_request:
+    branches: [agent/w0-1-reproducible-baseline, main]
+
+permissions:
+  contents: read
+
+jobs:
+  migrated-schema-parity:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: dental_schema_parity
+          POSTGRES_USER: dental
+          POSTGRES_PASSWORD: testpass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://dental:testpass@localhost:5432/dental_schema_parity
+      SECRET_KEY: w0-2-schema-parity-ci
+      ENVIRONMENT: test
+      TESTING: "true"
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11.15"
+      - name: Install locked backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip install --no-deps -e .
+      - name: Migrate fresh PostgreSQL database to all heads
+        working-directory: backend
+        run: alembic upgrade heads
+      - name: Compare migrated schema with complete SQLAlchemy metadata
+        working-directory: backend
+        run: python -m pytest tests/test_schema_parity.py -v --tb=short
