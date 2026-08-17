@@ -22,12 +22,36 @@ RUN node -e 'const fs=require("node:fs"); const root="/module_layers"; const mod
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
+# jsdom currently accepts undici ^7.25.0, but the reviewed frontend lock was
+# generated before the 7.29.0 security release. Prepare an exact runtime patch
+# without mutating the reviewed application lock; the final stage replaces only
+# vulnerable 7.27.2 copies emitted into Nitro's production output.
+FROM node:${NODE_VERSION}-${NODE_VARIANT} AS runtime-undici
+WORKDIR /runtime-patch
+RUN printf '{"private":true}\n' > package.json \
+    && npm install --ignore-scripts --no-audit --no-fund --package-lock=false --save-exact undici@7.29.0 \
+    && node -e 'const p=require("./node_modules/undici/package.json"); if (p.version !== "7.29.0") throw new Error(`Unexpected undici ${p.version}`)'
 
 FROM node:${NODE_VERSION}-${NODE_VARIANT}
 
 WORKDIR /app
 
 COPY --from=builder /app/.output /app/.output
+COPY --from=runtime-undici /runtime-patch/node_modules/undici /tmp/undici-7.29.0
+
+# Patch only the vulnerable jsdom-compatible Undici line in the generated Nitro
+# runtime. Fail the image build if no expected target is found or if 7.27.2
+# remains afterward, so this cannot silently become a broad dependency rewrite.
+RUN set -eux; \
+    vulnerable_dirs="$(find /app/.output -type f -path '*/node_modules/undici/package.json' -exec sh -c 'grep -q '"'"'"version": "7.27.2"'"'"' "$1" && dirname "$1"' sh {} \;)"; \
+    test -n "$vulnerable_dirs"; \
+    for dir in $vulnerable_dirs; do \
+      rm -rf "$dir"; \
+      cp -a /tmp/undici-7.29.0 "$dir"; \
+    done; \
+    ! find /app/.output -type f -path '*/node_modules/undici/package.json' -exec grep -l '"version": "7.27.2"' {} + | grep -q .; \
+    find /app/.output -type f -path '*/node_modules/undici/package.json' -exec grep -H '"version"' {} \;; \
+    rm -rf /tmp/undici-7.29.0
 
 # The Nitro production server needs Node, not npm/yarn/pnpm. Remove package
 # managers from the final image so their transitive CLI dependencies are not
