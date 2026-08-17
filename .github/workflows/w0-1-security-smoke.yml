@@ -1,0 +1,41 @@
+name: W0.1 Security Smoke
+
+on:
+  push:
+    branches: [agent/w0-1-security-remediation]
+
+permissions:
+  contents: read
+
+env:
+  GRYPE_VERSION: "0.116.1"
+
+jobs:
+  docker-grype:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build backend image
+        run: docker build -t dentalpin-backend:w0.1 ./backend
+
+      - name: Build frontend image
+        run: docker build -f frontend/Dockerfile.prod -t dentalpin-frontend:w0.1 .
+
+      - name: Install pinned Grype
+        run: |
+          set -euo pipefail
+          curl -fsSLo /tmp/grype-checksums.txt "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_checksums.txt"
+          curl -fsSLo "/tmp/grype_${GRYPE_VERSION}_linux_amd64.tar.gz" "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          (cd /tmp && grep "  grype_${GRYPE_VERSION}_linux_amd64.tar.gz$" grype-checksums.txt | sha256sum -c -)
+          tar -xzf "/tmp/grype_${GRYPE_VERSION}_linux_amd64.tar.gz" -C /tmp grype
+          sudo install -m 0755 /tmp/grype /usr/local/bin/grype
+          grype version
+
+      - name: Enforce backend HIGH/CRITICAL gate
+        run: grype docker:dentalpin-backend:w0.1 --fail-on high
+
+      - name: Enforce frontend HIGH/CRITICAL gate
+        run: grype docker:dentalpin-frontend:w0.1 --fail-on high
