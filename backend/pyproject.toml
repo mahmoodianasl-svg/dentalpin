@@ -92,9 +92,12 @@ ignore = ["E501"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
-# Slow-marked suites — opt-in with `-m <mark>` or included in CI via
-# an explicit step. Unmarked runs exclude them to keep local TDD fast.
+# Slow/environment-specific suites are opt-in with `-m <mark>` and are
+# included in CI through explicit steps. The default suite excludes them so
+# ordinary ORM/create_all regression tests do not accidentally depend on an
+# Alembic-migrated database precondition.
 markers = [
     "alembic_roundtrip: full base → head → base migration cycle (slow, needs DB)",
+    "schema_parity: migrated PostgreSQL model/migration structural parity (needs alembic upgrade heads)",
 ]
-addopts = "-m 'not alembic_roundtrip'"
+addopts = "-m 'not alembic_roundtrip and not schema_parity'"
