@@ -4,11 +4,12 @@ FROM python:${PYTHON_VERSION}-${PYTHON_VARIANT}
 
 WORKDIR /app
 
-# Install system dependencies (including WeasyPrint requirements for PDF generation)
-RUN apt-get update && apt-get install -y \
+# Install runtime libraries plus temporary build tooling. Build-only packages are
+# explicitly purged after the locked Python graph is installed so they cannot
+# inflate the production image or its vulnerability surface.
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
-    postgresql-client \
     libcairo2 \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
@@ -26,6 +27,17 @@ RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock
 # dependencies again.
 COPY . .
 RUN python -m pip install --no-cache-dir --no-deps .
+
+# python-jose's cryptography backend is independent from python-ecdsa and the
+# application only permits the configured JWT algorithm (HS256 in the W0.1
+# baseline). Remove the unused pure-Python ECDSA backend, which has an upstream
+# timing advisory with no patched release, and remove setuptools/build tooling
+# from the runtime after installation. Prove the JWT path still works before the
+# layer is committed.
+RUN python -m pip uninstall -y ecdsa setuptools \
+    && python -c 'from jose import jwt; key="w0-1-runtime-smoke-key"; token=jwt.encode({"sub":"smoke"}, key, algorithm="HS256"); assert jwt.decode(token, key, algorithms=["HS256"])["sub"] == "smoke"' \
+    && apt-get purge -y --auto-remove gcc libpq-dev libffi-dev \
+    && rm -rf /var/lib/apt/lists/* /root/.cache
 
 # Create non-root user and storage directory
 RUN useradd -m -u 1000 appuser \
