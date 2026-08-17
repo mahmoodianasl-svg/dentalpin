@@ -2,7 +2,7 @@
 
 This test intentionally runs against a database that CI has already migrated
 with ``alembic upgrade heads``. It compares that production-shaped schema with
-the complete SQLAlchemy metadata contract.
+the complete SQLAlchemy migration metadata contract.
 
 W0.2 is repaired in two explicit stages. This structural gate compares tables,
 columns/types, foreign keys, unique/check constraints and indexes first. Server
@@ -23,12 +23,10 @@ from alembic.migration import MigrationContext
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
+from sqlalchemy.schema import MetaData
 
 from app.config import settings
-from app.database import Base
-from app.schema_registry import register_all_models
-
-register_all_models()
+from app.schema_registry import build_migration_metadata
 
 
 def _operation_name(diff: Any) -> str:
@@ -47,7 +45,7 @@ def _format_diffs(diffs: list[object]) -> str:
     return f"Structural drift summary: {summary}\n\n{pformat(diffs, width=120)}"
 
 
-def _collect_schema_diffs(connection: Connection) -> list[object]:
+def _collect_schema_diffs(connection: Connection, metadata: MetaData) -> list[object]:
     context = MigrationContext.configure(
         connection,
         opts={
@@ -57,18 +55,27 @@ def _collect_schema_diffs(connection: Connection) -> list[object]:
             "compare_server_default": False,
         },
     )
-    return list(compare_metadata(context, Base.metadata))
+    return list(compare_metadata(context, metadata))
 
 
 @pytest.mark.asyncio
 async def test_migrated_schema_matches_complete_metadata() -> None:
+    # Build a private migration metadata view for this comparison. This must
+    # never mutate global Base.metadata because the ordinary backend test suite
+    # deliberately exercises existing ORM/create_all helper behavior too.
+    migration_metadata = build_migration_metadata()
+
     engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
     try:
         async with engine.connect() as connection:
-            diffs = await connection.run_sync(_collect_schema_diffs)
+            diffs = await connection.run_sync(
+                lambda sync_connection: _collect_schema_diffs(
+                    sync_connection, migration_metadata
+                )
+            )
     finally:
         await engine.dispose()
 
-    assert not diffs, "Migrated PostgreSQL schema differs from Base.metadata:\n" + _format_diffs(
+    assert not diffs, "Migrated PostgreSQL schema differs from migration metadata:\n" + _format_diffs(
         diffs
     )
