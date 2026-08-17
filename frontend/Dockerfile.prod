@@ -29,6 +29,22 @@ WORKDIR /app
 
 COPY --from=builder /app/.output /app/.output
 
+# The Nitro production server needs Node, not npm/yarn/pnpm. Remove package
+# managers from the final image so their transitive CLI dependencies are not
+# part of the production attack surface or SBOM.
+RUN rm -rf \
+      /usr/local/lib/node_modules/npm \
+      /usr/local/lib/node_modules/corepack \
+    && rm -f \
+      /usr/local/bin/npm \
+      /usr/local/bin/npx \
+      /usr/local/bin/corepack \
+      /usr/local/bin/yarn \
+      /usr/local/bin/yarnpkg \
+      /usr/local/bin/pnpm \
+      /usr/local/bin/pnpx \
+    && node --version
+
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000
