@@ -14,6 +14,11 @@ COPY backend/app/modules /module_layers
 
 COPY frontend/ ./
 
+# Build the production module map from the module layers copied into the image.
+# This intentionally overwrites any host-only modules.json used by CI typechecking,
+# so a production build cannot silently omit DentalPin's modular frontend layers.
+RUN node -e 'const fs=require("node:fs"); const root="/module_layers"; const modules=fs.readdirSync(root,{withFileTypes:true}).filter((entry)=>entry.isDirectory()&&fs.existsSync(`${root}/${entry.name}/frontend`)).map((entry)=>({name:entry.name,path:`${root}/${entry.name}/frontend`})).sort((a,b)=>a.name.localeCompare(b.name)); if(modules.length===0) throw new Error("No frontend module layers found"); fs.writeFileSync("modules.json",JSON.stringify({layers:modules.map((entry)=>entry.path),modules,version:1},null,2)+"\n"); console.log(`Prepared ${modules.length} production Nuxt module layers`)'
+
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
