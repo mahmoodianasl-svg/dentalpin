@@ -74,7 +74,9 @@ def _revision_and_one_way(path: Path) -> tuple[str | None, bool]:
                 if isinstance(node.value.value, str):
                     revision = node.value.value
         elif isinstance(node, ast.Assign):
-            if any(isinstance(target, ast.Name) and target.id == "revision" for target in node.targets):
+            if any(
+                isinstance(target, ast.Name) and target.id == "revision" for target in node.targets
+            ):
                 if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
                     revision = node.value.value
 
