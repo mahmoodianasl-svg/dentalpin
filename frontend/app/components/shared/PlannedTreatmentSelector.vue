@@ -107,6 +107,7 @@ function getToothInfo(item: PlannedTreatmentItem): string | null {
   }
   if (teeth.length === 1) {
     const tooth = teeth[0]
+    if (!tooth) return t('treatmentPlans.globalTreatment')
     const surfaces = (tooth.surfaces as string[] | undefined)?.join(', ')
     return surfaces ? `#${tooth.tooth_number} (${surfaces})` : `#${tooth.tooth_number}`
   }
