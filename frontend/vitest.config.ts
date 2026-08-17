@@ -1,21 +1,53 @@
-import { defineVitestConfig } from '@nuxt/test-utils/config'
+import { fileURLToPath } from 'node:url'
+import { defineVitestProject } from '@nuxt/test-utils/config'
+import { defineConfig } from 'vitest/config'
 
-export default defineVitestConfig({
+const frontendRoot = fileURLToPath(new URL('.', import.meta.url))
+const appRoot = fileURLToPath(new URL('./app', import.meta.url))
+
+export default defineConfig({
   test: {
-    environment: 'nuxt',
-    globals: true,
-    // Playwright E2E specs live under tests/e2e/. They use their own
-    // test runner (see playwright.config.ts + scripts/e2e.sh) and must
-    // not be picked up by vitest — doing so throws
-    // "Playwright Test did not expect test.describe() to be called here".
-    exclude: ['**/node_modules/**', '**/dist/**', 'tests/e2e/**'],
-    environmentOptions: {
-      nuxt: {
-        mock: {
-          intersectionObserver: true,
-          indexedDb: true
+    projects: [
+      {
+        resolve: {
+          alias: {
+            '~': appRoot,
+            '@': appRoot,
+            '~~': frontendRoot,
+            '@@': frontendRoot
+          }
+        },
+        test: {
+          name: 'unit',
+          globals: true,
+          environment: 'node',
+          include: [
+            'tests/agenda/**/*.{test,spec}.ts',
+            'tests/components/**/*.{test,spec}.ts',
+            'tests/config/**/*.{test,spec}.ts',
+            'tests/utils/**/*.{test,spec}.ts',
+            'tests/types.test.ts'
+          ]
         }
-      }
-    }
+      },
+      await defineVitestProject({
+        test: {
+          name: 'nuxt',
+          globals: true,
+          include: ['tests/composables/**/*.{test,spec}.ts'],
+          environment: 'nuxt',
+          environmentOptions: {
+            nuxt: {
+              rootDir: frontendRoot,
+              domEnvironment: 'happy-dom',
+              mock: {
+                intersectionObserver: true,
+                indexedDb: true
+              }
+            }
+          }
+        }
+      })
+    ]
   }
 })
