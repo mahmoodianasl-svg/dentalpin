@@ -29,8 +29,9 @@ d['devDependencies']['vitest']='4.1.10'
 p.write_text(json.dumps(d, indent=2)+'\n')
 EOF_NODE_PACKAGE
 cd "$ROOT/frontend"
+# Preserve the committed reviewed lock. Do not run `npm update` here: moving
+# registry targets make a supposedly reproducible finalizer drift over time.
 npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-npm update @nuxt/devtools vite --package-lock-only --ignore-scripts --no-audit --no-fund
 npm ci --no-audit --no-fund
 cd "$ROOT/docs/portal"
 npm ci --no-audit --no-fund
