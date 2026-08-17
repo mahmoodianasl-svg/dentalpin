@@ -49,16 +49,22 @@ require(any(x.startswith('python-multipart>=0.0.32') for x in deps),'python-mult
 require(any(x.startswith('openai>=1.40,<2.0') for x in deps),'OpenAI SDK major cap missing')
 fl=ROOT/'frontend/package-lock.json'
 nuxt=lockver(fl,'nuxt'); devtools=lockver(fl,'@nuxt/devtools'); types=lockver(fl,'@types/node')
-if vt(nuxt) < (4,5,1): pending.append(f'frontend lock Nuxt is {nuxt}; need >=4.5.1')
-if vt(devtools) < (3,3,1): pending.append(f'frontend lock @nuxt/devtools is {devtools}; need >=3.3.1')
+i18n=lockver(fl,'@nuxtjs/i18n'); test_utils=lockver(fl,'@nuxt/test-utils'); vitest=lockver(fl,'vitest')
+require(nuxt=='4.5.1',f'frontend lock Nuxt must be exactly 4.5.1; found {nuxt}')
+require(devtools=='3.4.1',f'frontend lock @nuxt/devtools must be exactly 3.4.1; found {devtools}')
+require(types=='24.13.3',f'frontend lock @types/node must be exactly 24.13.3; found {types}')
+require(i18n=='10.6.0',f'frontend lock @nuxtjs/i18n must be exactly 10.6.0; found {i18n}')
+require(test_utils=='4.1.0',f'frontend lock @nuxt/test-utils must be exactly 4.1.0; found {test_utils}')
+require(vitest=='4.1.10',f'frontend lock vitest must be exactly 4.1.10; found {vitest}')
 resolved_vite=lockvers(fl,'vite')
 if not resolved_vite:
-    pending.append('frontend lock contains no Vite package')
+    errors.append('frontend lock contains no Vite package')
 else:
+    root_vite=[version for path,version in resolved_vite if path=='node_modules/vite']
+    require(root_vite==['8.2.1'],f'frontend root Vite must be exactly 8.2.1; found {root_vite or "none"}')
     for path,version in resolved_vite:
         if not vite_is_patched(version):
-            pending.append(f'frontend lock {path} is Vite {version}; require patched lane >=6.4.3, >=7.3.5, or >=8.0.16')
-if not types or vt(types)[0] != 24: pending.append(f'frontend lock @types/node is {types}; target major 24')
+            errors.append(f'frontend lock {path} is Vite {version}; require patched lane >=6.4.3, >=7.3.5, or >=8.0.16')
 locks_ok=True
 for name in ['requirements.lock','requirements-dev.lock']:
     p=ROOT/'backend'/name
