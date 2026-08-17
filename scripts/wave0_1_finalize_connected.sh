@@ -13,30 +13,27 @@ if [[ "$NPM_MAJOR" != "11" ]]; then
   exit 2
 fi
 if ! command -v python3.11 >/dev/null 2>&1 || [[ "$(python3.11 -c 'import platform; print(platform.python_version())')" != "3.11.15" ]]; then
-  echo "error: Python 3.11.15 must be available as python3.11 before lock finalization." >&2
+  echo "error: Python 3.11.15 must be available as python3.11." >&2
   exit 2
 fi
-# The generated dependency baseline is committed to the W0.1 branch. Re-running
-# this script with the pinned toolchain must therefore be idempotent (no lock drift).
-python3 - "$ROOT/frontend/package.json" <<'EOF_NODE_PACKAGE'
-import json, pathlib, sys
-p=pathlib.Path(sys.argv[1]); d=json.loads(p.read_text())
-d['dependencies']['nuxt']='4.5.1'
-d['dependencies']['@nuxtjs/i18n']='10.6.0'
-d['devDependencies']['@types/node']='24.13.3'
-d['devDependencies']['@nuxt/test-utils']='4.1.0'
-d['devDependencies']['vitest']='4.1.10'
-p.write_text(json.dumps(d, indent=2)+'\n')
-EOF_NODE_PACKAGE
-cd "$ROOT/frontend"
-# Preserve the committed reviewed lock. Do not run `npm update` here: moving
-# registry targets make a supposedly reproducible finalizer drift over time.
-npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-npm ci --no-audit --no-fund
-cd "$ROOT/docs/portal"
-npm ci --no-audit --no-fund
-cd "$ROOT/backend"
-./scripts/compile_dependency_locks.sh
+if ! command -v uv >/dev/null 2>&1 || [[ "$(uv --version | awk '{print $2}')" != "0.12.1" ]]; then
+  echo "error: uv 0.12.1 is required for the reviewed W0.1 baseline." >&2
+  exit 2
+fi
+
+# W0.1 dependency locks are finalized and reviewed. This verification path is
+# deliberately read-only: it must never regenerate package-lock.json or Python
+# lock files, because registry resolution can drift even with pinned toolchains.
 cd "$ROOT"
 python3 scripts/check_wave0_1_baseline.py --strict
-echo 'Wave 0.1 dependency baseline finalized. Run the full test matrix before marking the gate PASS.'
+
+cd "$ROOT/frontend"
+npm ci --no-audit --no-fund
+
+cd "$ROOT/docs/portal"
+npm ci --no-audit --no-fund
+
+cd "$ROOT"
+python3 scripts/check_wave0_1_baseline.py --strict
+
+echo 'Wave 0.1 dependency baseline verified without lock regeneration.'
