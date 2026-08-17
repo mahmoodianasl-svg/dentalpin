@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.config import settings
+
+if os.getenv("MIGRATED_SCHEMA_PARITY") != "true":
+    pytest.skip("requires an Alembic-migrated schema", allow_module_level=True)
 
 pytestmark = pytest.mark.schema_parity
 
