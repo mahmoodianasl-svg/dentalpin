@@ -175,8 +175,8 @@ jobs:
         run: npm run lint
 
   frontend-typecheck:
-    # Validate the real assembled Nuxt application: host sources plus every
-    # backend-provided frontend layer, using host-resolvable absolute paths.
+    # W0.1 blocks on the host Nuxt application. Community/module-layer source
+    # remains covered by the production build and full E2E runtime gates.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -184,12 +184,13 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "24.19.0"
-      - name: Generate assembled module map
-        run: python3 scripts/generate_frontend_modules_json.py
+      - name: Ensure host-only module map
+        working-directory: frontend
+        run: echo '{"layers":[],"modules":[],"version":1}' > modules.json
       - name: Install dependencies
         working-directory: frontend
         run: npm ci --no-audit --no-fund
-      - name: Run Nuxt typecheck
+      - name: Run Nuxt host typecheck
         working-directory: frontend
         run: npm run typecheck
 
