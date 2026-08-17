@@ -1,0 +1,12 @@
+{
+  "extends": "./.nuxt/tsconfig.app.json",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": false
+  },
+  "include": [
+    "app/**/*.ts",
+    "app/**/*.vue",
+    "app/**/*.d.ts"
+  ]
+}
