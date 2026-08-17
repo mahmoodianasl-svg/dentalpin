@@ -16,6 +16,8 @@ if ! command -v python3.11 >/dev/null 2>&1 || [[ "$(python3.11 -c 'import platfo
   echo "error: Python 3.11.15 must be available as python3.11 before lock finalization." >&2
   exit 2
 fi
+# The generated dependency baseline is committed to the W0.1 branch. Re-running
+# this script with the pinned toolchain must therefore be idempotent (no lock drift).
 python3 - "$ROOT/frontend/package.json" <<'EOF_NODE_PACKAGE'
 import json, pathlib, sys
 p=pathlib.Path(sys.argv[1]); d=json.loads(p.read_text())
