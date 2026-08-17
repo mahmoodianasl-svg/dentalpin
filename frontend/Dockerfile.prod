@@ -23,21 +23,22 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
 # jsdom currently accepts undici ^7.25.0, but the reviewed frontend lock was
-# generated before the 7.29.0 security release. Prepare an exact runtime patch
-# without mutating the reviewed application lock; the final stage replaces only
-# vulnerable 7.27.2 copies emitted into Nitro's production output.
+# generated before the 7.29.0 security release. Fetch the exact package tarball
+# into an isolated patch stage without mutating the reviewed application lock.
 FROM node:${NODE_VERSION}-${NODE_VARIANT} AS runtime-undici
 WORKDIR /runtime-patch
-RUN printf '{"private":true}\n' > package.json \
-    && npm install --ignore-scripts --no-audit --no-fund --package-lock=false --save-exact undici@7.29.0 \
-    && node -e 'const p=require("./node_modules/undici/package.json"); if (p.version !== "7.29.0") throw new Error(`Unexpected undici ${p.version}`)'
+RUN npm pack --ignore-scripts --silent undici@7.29.0 \
+    && mkdir -p undici \
+    && tar -xzf undici-7.29.0.tgz -C undici --strip-components=1 \
+    && node -e 'const p=require("./undici/package.json"); if (p.version !== "7.29.0") throw new Error(`Unexpected undici ${p.version}`)' \
+    && rm -f undici-7.29.0.tgz
 
 FROM node:${NODE_VERSION}-${NODE_VARIANT}
 
 WORKDIR /app
 
 COPY --from=builder /app/.output /app/.output
-COPY --from=runtime-undici /runtime-patch/node_modules/undici /tmp/undici-7.29.0
+COPY --from=runtime-undici /runtime-patch/undici /tmp/undici-7.29.0
 
 # Patch only the vulnerable jsdom-compatible Undici line in the generated Nitro
 # runtime. Fail the image build if no expected target is found or if 7.27.2
