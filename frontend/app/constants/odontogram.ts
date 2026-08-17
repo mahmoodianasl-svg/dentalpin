@@ -18,7 +18,7 @@ export const PERMANENT_TEETH = {
   upperRight: [18, 17, 16, 15, 14, 13, 12, 11], // Molars→Incisors (left side of screen)
   upperLeft: [21, 22, 23, 24, 25, 26, 27, 28], // Incisors→Molars (right side of screen)
   lowerRight: [48, 47, 46, 45, 44, 43, 42, 41], // Molars→Incisors (left side of screen)
-  lowerLeft: [31, 32, 33, 34, 35, 36, 37, 38] // Incisors→Molars (right side of screen)
+  lowerLeft: [31, 32, 33, 34, 35, 36, 37, 38] // Molars→Incisors (right side of screen)
 } as const
 
 /**
@@ -52,8 +52,6 @@ export const CONDITION_COLORS: Record<ToothCondition, string> = {
   missing: '#9CA3AF',
   root_canal: '#8B5CF6',
   implant: '#10B981',
-  bridge_pontic: '#F97316',
-  bridge_abutment: '#FBBF24',
   extraction_indicated: '#DC2626',
   sealant: '#06B6D4',
   fracture: '#BE185D'
@@ -79,8 +77,8 @@ export const SURFACE_LABELS: Record<Surface, string> = {
 /** Keyboard shortcuts for quick treatment selection (1-8 keys) */
 export const TREATMENT_SHORTCUTS: Record<string, TreatmentType> = {
   1: 'extraction',
-  2: 'filling',
-  3: 'root_canal',
+  2: 'filling_composite',
+  3: 'root_canal_full',
   4: 'crown',
   5: 'implant',
   6: 'veneer',
