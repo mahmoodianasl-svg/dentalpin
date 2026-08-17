@@ -42,9 +42,57 @@ jobs:
         run: |
           python -m pip install --require-hashes -r requirements-dev.lock
           python -m pip install --no-deps -e .
+      - name: Lint W0.2 schema controls
+        working-directory: backend
+        run: ruff check app/schema_registry.py tests/test_schema_parity.py tests/test_alembic_roundtrip.py
+      - name: Verify irreversible migration inventory
+        working-directory: backend
+        run: >-
+          python -m pytest -m alembic_roundtrip
+          tests/test_alembic_roundtrip.py::test_one_way_revision_inventory_is_complete
+          -v --tb=short
       - name: Migrate fresh PostgreSQL database to all heads
         working-directory: backend
         run: alembic upgrade heads
       - name: Compare migrated schema with complete SQLAlchemy metadata
         working-directory: backend
+        run: python -m pytest tests/test_schema_parity.py -v --tb=short
+      - name: Verify PostgreSQL backup and restore
+        run: |
+          set -euo pipefail
+          export PGPASSWORD=testpass
+
+          docker run --rm --network host \
+            -e PGPASSWORD="$PGPASSWORD" \
+            postgres:15-alpine \
+            pg_dump -h 127.0.0.1 -U dental -d dental_schema_parity -Fc \
+            > /tmp/dental-w0-2.dump
+
+          test -s /tmp/dental-w0-2.dump
+
+          docker run --rm --network host \
+            -e PGPASSWORD="$PGPASSWORD" \
+            postgres:15-alpine \
+            psql -h 127.0.0.1 -U dental -d postgres -v ON_ERROR_STOP=1 \
+            -c "DROP DATABASE IF EXISTS dental_schema_restore" \
+            -c "CREATE DATABASE dental_schema_restore OWNER dental"
+
+          docker run --rm --network host -i \
+            -e PGPASSWORD="$PGPASSWORD" \
+            postgres:15-alpine \
+            pg_restore -h 127.0.0.1 -U dental -d dental_schema_restore --exit-on-error \
+            < /tmp/dental-w0-2.dump
+
+          source_heads="$(docker run --rm --network host -e PGPASSWORD="$PGPASSWORD" postgres:15-alpine \
+            psql -h 127.0.0.1 -U dental -d dental_schema_parity -Atc \
+            'SELECT version_num FROM alembic_version ORDER BY version_num')"
+          restore_heads="$(docker run --rm --network host -e PGPASSWORD="$PGPASSWORD" postgres:15-alpine \
+            psql -h 127.0.0.1 -U dental -d dental_schema_restore -Atc \
+            'SELECT version_num FROM alembic_version ORDER BY version_num')"
+          test -n "$source_heads"
+          test "$source_heads" = "$restore_heads"
+      - name: Verify restored database schema
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://dental:testpass@localhost:5432/dental_schema_restore
         run: python -m pytest tests/test_schema_parity.py -v --tb=short
