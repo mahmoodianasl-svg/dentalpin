@@ -67,7 +67,7 @@ def upgrade() -> None:
 
     op.execute(
         """
-        CREATE FUNCTION check_payment_financial_integrity(target_payment_id uuid)
+        CREATE OR REPLACE FUNCTION check_payment_financial_integrity(target_payment_id uuid)
         RETURNS void
         LANGUAGE plpgsql
         AS $$
@@ -119,7 +119,7 @@ def upgrade() -> None:
 
     op.execute(
         """
-        CREATE FUNCTION enforce_payment_financial_integrity()
+        CREATE OR REPLACE FUNCTION enforce_payment_financial_integrity()
         RETURNS trigger
         LANGUAGE plpgsql
         AS $$
