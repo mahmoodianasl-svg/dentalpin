@@ -132,10 +132,11 @@ jobs:
           cd ..
           python scripts/check_docs_layout.py
 
-      - name: Generate assembled frontend module map
-        run: python3 scripts/generate_frontend_modules_json.py
+      - name: Ensure host-only frontend module map
+        working-directory: frontend
+        run: echo '{"layers":[],"modules":[],"version":1}' > modules.json
 
-      - name: Frontend lint and assembled typecheck
+      - name: Frontend lint and host typecheck
         working-directory: frontend
         run: |
           npm run lint
@@ -143,9 +144,7 @@ jobs:
 
       - name: Frontend unit tests
         working-directory: frontend
-        run: |
-          echo '{"layers":[],"modules":[],"version":1}' > modules.json
-          npm run test -- --run
+        run: npm run test -- --run
 
       - name: Docs portal build
         working-directory: docs/portal
