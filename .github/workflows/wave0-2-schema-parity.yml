@@ -1,5 +1,7 @@
 name: Wave 0.2 Schema Parity
 
+# Revalidate the resolved W0.2 stack against main after W0.1 integration.
+
 on:
   push:
     branches: [agent/w0-2-schema-parity]
