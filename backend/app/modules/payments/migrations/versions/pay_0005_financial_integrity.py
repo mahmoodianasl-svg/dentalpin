@@ -158,8 +158,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     for table_name in ("refunds", "payment_allocations", "payments"):
-        op.execute(
-            f"DROP TRIGGER IF EXISTS trg_{table_name}_financial_integrity ON {table_name}"
-        )
+        op.execute(f"DROP TRIGGER IF EXISTS trg_{table_name}_financial_integrity ON {table_name}")
     op.execute("DROP FUNCTION IF EXISTS enforce_payment_financial_integrity()")
     op.execute("DROP FUNCTION IF EXISTS check_payment_financial_integrity(uuid)")
