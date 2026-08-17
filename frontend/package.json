@@ -10,7 +10,7 @@
     "postinstall": "nuxt prepare",
     "lint": "eslint . module_layers",
     "lint:fix": "eslint . module_layers --fix",
-    "typecheck": "nuxi prepare && vue-tsc --noEmit -p tsconfig.w0_1.json",
+    "typecheck": "nuxi prepare && nuxt typecheck",
     "typecheck:full": "nuxi prepare && nuxt typecheck",
     "test": "vitest",
     "test:ui": "vitest --ui",
