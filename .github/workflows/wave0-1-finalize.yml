@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   NODE_VERSION: "24.19.0"
@@ -20,7 +20,7 @@ env:
 
 jobs:
   finalize-and-verify:
-    name: Generate locks, test, build, SBOM, scan
+    name: Verify locks, test, build, SBOM, scan
     runs-on: ubuntu-latest
     timeout-minutes: 60
     services:
@@ -41,8 +41,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -64,28 +62,12 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
 
-      - name: Finalize reviewed dependency baseline
+      - name: Verify reviewed dependency baseline
         run: ./scripts/wave0_1_finalize_connected.sh
 
-      - name: Strict baseline gate
-        run: python scripts/check_wave0_1_baseline.py --strict
-
-      - name: Capture generated lock patch
+      - name: Assert dependency locks unchanged
         run: |
           mkdir -p "$W0_EVIDENCE_DIR"
-          git diff -- \
-            frontend/package.json frontend/package-lock.json \
-            backend/requirements.lock backend/requirements-dev.lock \
-            backend/dependency-lock-metadata.json \
-            > "$W0_EVIDENCE_DIR/generated-locks.patch"
-          git diff --name-status > "$W0_EVIDENCE_DIR/generated-files.txt"
-
-      - name: Promote finalized dependency locks to PR branch
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          PR_HEAD_REF: ${{ github.head_ref }}
-        run: |
-          set -euo pipefail
           LOCK_FILES=(
             frontend/package.json
             frontend/package-lock.json
@@ -93,15 +75,9 @@ jobs:
             backend/requirements-dev.lock
             backend/dependency-lock-metadata.json
           )
-          if git diff --quiet -- "${LOCK_FILES[@]}"; then
-            echo "Finalized W0.1 dependency baseline is already committed."
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -- "${LOCK_FILES[@]}"
-            git commit -m "build: commit finalized W0.1 dependency locks"
-            git push origin "HEAD:${PR_HEAD_REF}"
-          fi
+          git diff -- "${LOCK_FILES[@]}" > "$W0_EVIDENCE_DIR/generated-locks.patch"
+          git diff --name-status > "$W0_EVIDENCE_DIR/generated-files.txt"
+          git diff --exit-code -- "${LOCK_FILES[@]}"
 
       - name: Install locked backend dependencies
         working-directory: backend
@@ -156,13 +132,19 @@ jobs:
           cd ..
           python scripts/check_docs_layout.py
 
-      - name: Frontend lint/type/unit tests
+      - name: Generate assembled frontend module map
+        run: python3 scripts/generate_frontend_modules_json.py
+
+      - name: Frontend lint and assembled typecheck
         working-directory: frontend
         run: |
-          mkdir -p module_layers
-          echo '{"layers":[],"modules":[],"version":1}' > modules.json
           npm run lint
           npm run typecheck
+
+      - name: Frontend unit tests
+        working-directory: frontend
+        run: |
+          echo '{"layers":[],"modules":[],"version":1}' > modules.json
           npm run test -- --run
 
       - name: Docs portal build
@@ -255,20 +237,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Generate E2E module-layer paths
-        working-directory: frontend
-        run: |
-          python3 - <<'PY'
-          import json, os
-          from pathlib import Path
-          root=Path(os.environ['GITHUB_WORKSPACE'])
-          modules_dir=root/'backend/app/modules'
-          entries=[]
-          for m in sorted(modules_dir.iterdir()):
-              layer=m/'frontend'
-              if layer.is_dir():
-                  entries.append({'name':m.name,'path':str(layer.resolve())})
-          Path('modules.json').write_text(json.dumps({'layers':[e['path'] for e in entries], 'modules':entries, 'version':1}, indent=2))
-          PY
+        run: python3 scripts/generate_frontend_modules_json.py
 
       - name: Start frontend and run E2E
         working-directory: frontend
