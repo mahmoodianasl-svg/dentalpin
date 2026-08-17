@@ -1,0 +1,68 @@
+# W0.1 vulnerability-gate policy.
+#
+# Full Grype JSON evidence is still generated; suppressed findings are retained
+# in the JSON `ignoredMatches` collection. The fail-on-high gate remains active.
+# Debian HIGH/CRITICAL findings are suppressed only while Debian/Grype reports
+# that no fix is available. Once a distro fix exists, the rule stops matching.
+#
+# CPython rules are scoped to exactly 3.11.15. Grype's NVD CPE feed currently
+# reports the findings below as fixed only on other or not-yet-released Python
+# lines, so no 3.11.x upgrade exists to apply to the pinned W0.1 baseline.
+ignore:
+  - fix-state: not-fixed
+    package:
+      type: deb
+  - fix-state: wont-fix
+    package:
+      type: deb
+
+  - vulnerability: CVE-2026-11940
+    package:
+      name: python
+      version: 3.11.15
+      type: binary
+  - vulnerability: CVE-2026-11972
+    package:
+      name: python
+      version: 3.11.15
+      type: binary
+  - vulnerability: CVE-2026-15308
+    package:
+      name: python
+      version: 3.11.15
+      type: binary
+  - vulnerability: CVE-2026-3298
+    package:
+      name: python
+      version: 3.11.15
+      type: binary
+  - vulnerability: CVE-2026-3644
+    package:
+      name: python
+      version: 3.11.15
+      type: binary
+  - vulnerability: CVE-2026-4224
+    package:
+      name: python
+      version: 3.11.15
+      type: binary
+  - vulnerability: CVE-2026-4786
+    package:
+      name: python
+      version: 3.11.15
+      type: binary
+  - vulnerability: CVE-2026-6100
+    package:
+      name: python
+      version: 3.11.15
+      type: binary
+  - vulnerability: CVE-2026-7210
+    package:
+      name: python
+      version: 3.11.15
+      type: binary
+  - vulnerability: CVE-2026-9669
+    package:
+      name: python
+      version: 3.11.15
+      type: binary
