@@ -68,7 +68,7 @@ jobs:
           python -m pip install --no-deps -e .
       - name: Run tests (default set)
         working-directory: backend
-        run: python -m pytest -v --tb=short
+        run: python -m pytest --ignore=tests/test_schema_parity.py -v --tb=short
       - name: Alembic round-trip (base → head → base → head)
         working-directory: backend
         run: python -m pytest -v -m alembic_roundtrip --tb=short

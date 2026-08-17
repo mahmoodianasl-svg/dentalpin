@@ -1,48 +1,26 @@
-"""Round-trip migration test.
+"""Round-trip migration and irreversibility-policy tests.
 
 Asserts that the head schema is reproducible — i.e. ``upgrade heads``
 produces the same set of tables and columns whether you arrive there
-from a clean DB or after a downgrade.
+from a clean DB or after a downgrade/reset.
 
 The strict form is ``upgrade → downgrade base → upgrade``. We keep it
-when every migration has a working ``downgrade``. As soon as the graph
-contains a one-way migration (its downgrade raises
-``NotImplementedError`` on purpose — see ``ONE_WAY_REVISIONS``), the
-strict round-trip is impossible: descending past the wall would invoke
-the unimplemented downgrade and abort the test.
+when every migration has a working ``downgrade``. When the graph contains
+an explicitly one-way migration, descending past that wall is unsupported;
+CI therefore verifies clean rebuild determinism and separately asserts that
+every source-level ``NotImplementedError`` downgrade is present in the
+reviewed one-way inventory below.
 
-While walls exist, we degrade to ``upgrade → drop schema → stamp base
-→ upgrade`` and assert the resulting schema matches the original.
-This still catches:
-
-- ``upgrade heads`` not being deterministic (drift between two clean
-  rebuilds).
-- ``get_models()`` declarations diverging from the migrations.
-- Schema-time bugs like FK target mismatches that crash on second
-  upgrade.
-
-It does **not** catch broken ``downgrade`` methods. The ``ONE_WAY_REVISIONS``
-list is the place to revisit when a wall can be removed (e.g. by
-implementing the downgrade or by squashing pre-prod migrations); when
-the list is empty, the test re-enters strict mode automatically.
-
-Plural ``heads`` is used because removable modules (issue #56) live on
-their own Alembic branch, so the graph has more than one head.
-
-Alembic commands are invoked via subprocess because ``env.py`` runs
-``asyncio.run(...)`` internally — calling that from within pytest's
-running event loop raises ``RuntimeError: asyncio.run() cannot be
-called from a running event loop``.
-
-Marked ``alembic_roundtrip`` and excluded from the default pytest run
-(see ``pyproject.toml``). CI runs it as a dedicated step after the
-main test suite.
+Production policy for one-way migrations is forward-fix plus tested database
+backup/restore; W0.2 verifies that path in the schema-parity workflow.
 """
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 
 import asyncpg
@@ -55,20 +33,17 @@ pytestmark = pytest.mark.alembic_roundtrip
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_INI = BACKEND_ROOT / "alembic.ini"
 
-# Migrations whose ``downgrade`` is intentionally not implemented.
-# Each entry is the revision id where ``raise NotImplementedError`` lives.
-# When this set is empty, the strict round-trip (downgrade base) is run.
-# Otherwise the test degrades to drop-schema-and-rebuild idempotency.
-#
-# Adding a wall is an explicit decision — squash the pre-prod chain or
-# implement the downgrade as soon as it can be done. Track the rationale
-# in the migration file's docstring.
+# Reviewed revisions whose downgrade is intentionally unsupported because the
+# upgrade moves/de-duplicates data into a new ownership model. This set is a
+# safety contract, not a convenience switch: ``test_one_way_revision_inventory``
+# discovers every migration that raises NotImplementedError and requires exact
+# equality with this inventory.
 ONE_WAY_REVISIONS: frozenset[str] = frozenset(
     {
-        # tp_0004: consolidates `treatment_media` into `media.media_attachments`.
-        # The downgrade would have to recreate `treatment_media` and copy
-        # filtered rows back. Pre-prod, treatment_media data lives in
-        # media_attachments going forward — see the migration's docstring.
+        # cn_0002: moves clinical_note_attachments into polymorphic
+        # media_attachments and creates additional provenance links.
+        "cn_0002",
+        # tp_0004: consolidates treatment_media into media.media_attachments.
         "tp_0004",
     }
 )
@@ -80,6 +55,57 @@ def _alembic(*args: str) -> None:
         ["alembic", "-c", str(ALEMBIC_INI), *args],
         cwd=BACKEND_ROOT,
         check=True,
+    )
+
+
+def _migration_files() -> Iterator[Path]:
+    """Yield every main and per-module migration revision file."""
+    yield from sorted((BACKEND_ROOT / "alembic" / "versions").glob("*.py"))
+    yield from sorted((BACKEND_ROOT / "app" / "modules").glob("*/migrations/versions/*.py"))
+
+
+def _revision_and_one_way(path: Path) -> tuple[str | None, bool]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    revision: str | None = None
+
+    for node in tree.body:
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if node.target.id == "revision" and isinstance(node.value, ast.Constant):
+                if isinstance(node.value.value, str):
+                    revision = node.value.value
+        elif isinstance(node, ast.Assign):
+            if any(
+                isinstance(target, ast.Name) and target.id == "revision" for target in node.targets
+            ):
+                if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+                    revision = node.value.value
+
+    one_way = any(
+        isinstance(node, ast.Raise)
+        and (
+            isinstance(node.exc, ast.Name)
+            and node.exc.id == "NotImplementedError"
+            or isinstance(node.exc, ast.Call)
+            and isinstance(node.exc.func, ast.Name)
+            and node.exc.func.id == "NotImplementedError"
+        )
+        for node in ast.walk(tree)
+    )
+    return revision, one_way
+
+
+def test_one_way_revision_inventory_is_complete() -> None:
+    """Every intentionally irreversible revision must be explicitly reviewed."""
+    discovered: set[str] = set()
+    for path in _migration_files():
+        revision, one_way = _revision_and_one_way(path)
+        if one_way:
+            assert revision, f"one-way migration has no revision id: {path}"
+            discovered.add(revision)
+
+    assert discovered == set(ONE_WAY_REVISIONS), (
+        "Irreversible migration inventory drift. "
+        f"source={sorted(discovered)}, reviewed={sorted(ONE_WAY_REVISIONS)}"
     )
 
 
@@ -120,10 +146,7 @@ def _leftover_tables() -> list[str]:
 
 
 async def _drop_public_schema_async() -> None:
-    """Drop every non-system table in ``public`` *and* the alembic version
-    table, so the next ``alembic stamp base`` starts from a truly empty
-    state. Equivalent to ``DROP SCHEMA public CASCADE; CREATE SCHEMA public``,
-    but expressed as table drops to keep ownership and grants intact."""
+    """Drop every non-system table in public, including alembic_version."""
     conn = await asyncpg.connect(_asyncpg_dsn())
     try:
         rows = await conn.fetch("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
@@ -140,17 +163,15 @@ def _drop_public_schema() -> None:
 def test_upgrade_downgrade_upgrade_is_schema_stable() -> None:
     """upgrade → reset → upgrade must produce the same schema.
 
-    Strict round-trip when no one-way migrations exist; degraded to
-    drop-and-rebuild idempotency when ``ONE_WAY_REVISIONS`` is non-empty
-    (see module docstring for the trade-off)."""
+    A strict downgrade-to-base is executed only when the reviewed graph has no
+    one-way walls. When walls exist, backup/restore is the supported production
+    recovery mechanism and this test retains clean-rebuild determinism.
+    """
     _alembic("upgrade", "heads")
     before = _snapshot_tables()
     assert before, "expected at least one table after upgrade heads"
 
     if ONE_WAY_REVISIONS:
-        # One-way walls present — replace strict round-trip with
-        # drop-schema-and-stamp-base. We still verify that re-running
-        # `upgrade heads` from a clean state matches the original.
         _drop_public_schema()
         _alembic("stamp", "base")
         leftover = _leftover_tables()

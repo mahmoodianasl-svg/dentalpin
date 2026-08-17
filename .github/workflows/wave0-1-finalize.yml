@@ -100,7 +100,7 @@ jobs:
           TESTING: "true"
         run: |
           set -o pipefail
-          python -m pytest -v --tb=short | tee "$W0_EVIDENCE_DIR/backend-pytest.log"
+          python -m pytest --ignore=tests/test_schema_parity.py -v --tb=short | tee "$W0_EVIDENCE_DIR/backend-pytest.log"
 
       - name: Alembic round-trip tests
         working-directory: backend

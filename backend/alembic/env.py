@@ -28,96 +28,13 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from app.config import settings
-
-# Import all models to register them with Base.metadata
-from app.core.agents.models import (  # noqa: F401
-    Agent,
-    AgentApprovalQueue,
-    AgentAuditLog,
-    AgentSession,
-)
-from app.core.auth.models import Clinic, ClinicMembership, User  # noqa: F401
 from app.core.plugins.alembic_paths import discover_version_locations
-from app.core.plugins.db_models import (  # noqa: F401
-    ExternalId,
-    ModuleOperationLog,
-    ModuleRecord,
-)
-from app.database import Base
-from app.modules.agenda.models import Appointment, AppointmentTreatment, Cabinet  # noqa: F401
-from app.modules.billing.models import (  # noqa: F401
-    Invoice,
-    InvoiceHistory,
-    InvoiceItem,
-    InvoicePayment,
-    InvoiceSeries,
-    InvoiceSeriesHistory,
-)
-from app.modules.budget.models import (  # noqa: F401
-    Budget,
-    BudgetHistory,
-    BudgetItem,
-    BudgetSignature,
-)
-from app.modules.catalog.models import (  # noqa: F401
-    TreatmentCatalogItem,
-    TreatmentCategory,
-    TreatmentOdontogramMapping,
-    VatType,
-)
-from app.modules.media.models import Document, MediaAttachment  # noqa: F401
-from app.modules.notifications.models import (  # noqa: F401
-    ClinicChannelSettings,
-    ClinicNotificationSettings,
-    ClinicSmtpSettings,
-    CommunicationMessage,
-    NotificationPreference,
-    NotificationTemplate,
-)
-from app.modules.odontogram.models import (  # noqa: F401
-    OdontogramHistory,
-    ToothRecord,
-    Treatment,
-    TreatmentTooth,
-)
-from app.modules.patient_timeline.models import PatientTimeline  # noqa: F401
-from app.modules.patients.models import Patient  # noqa: F401
-from app.modules.patients_clinical.models import (  # noqa: F401
-    Allergy,
-    EmergencyContact,
-    LegalGuardian,
-    MedicalContext,
-    Medication,
-    SurgicalHistory,
-    SystemicDisease,
-)
-from app.modules.payments.models import (  # noqa: F401
-    PatientEarnedEntry,
-    Payment,
-    PaymentAllocation,
-    PaymentHistory,
-    Refund,
-)
-from app.modules.recalls.models import (  # noqa: F401
-    Recall,
-    RecallContactAttempt,
-    RecallSettings,
-)
-from app.modules.schedules.models import (  # noqa: F401
-    ClinicOverride,
-    ClinicWeeklySchedule,
-    ProfessionalOverride,
-    ProfessionalWeeklySchedule,
-    ScheduleShift,
-)
-from app.modules.treatment_plan.models import (  # noqa: F401
-    PlannedTreatmentItem,
-    TreatmentPlan,
-)
-from app.modules.whatsapp_kapso.models import (  # noqa: F401
-    WhatsappKapsoSettings,
-    WhatsappKapsoTemplate,
-)
+from app.schema_registry import build_migration_metadata
+
+# Alembic gets an isolated production-equivalent metadata view. The registry
+# imports every active model, clones Base.metadata, then applies the historical
+# migration contract to that clone so application/test metadata is untouched.
+target_metadata = build_migration_metadata()
 
 ALEMBIC_DIR = Path(__file__).parent
 BACKEND_ROOT = ALEMBIC_DIR.parent
@@ -140,8 +57,6 @@ config.set_main_option(
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = Base.metadata
-
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
@@ -151,7 +66,7 @@ def run_migrations_offline() -> None:
     creation we don't even need a DBAPI to be available.
 
     Calls to context.execute() here emit the given string to the
-    script output.
+    script output stream.
     """
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
