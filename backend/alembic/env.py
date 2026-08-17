@@ -29,13 +29,12 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 from app.config import settings
 from app.core.plugins.alembic_paths import discover_version_locations
-from app.database import Base
-from app.schema_registry import register_all_models
+from app.schema_registry import build_migration_metadata
 
-# Alembic's metadata contract must include every active declarative model.
-# The registry discovers modular ``models.py`` files deterministically so
-# adding a module cannot silently disappear from autogenerate/parity checks.
-register_all_models()
+# Alembic gets an isolated production-equivalent metadata view. The registry
+# imports every active model, clones Base.metadata, then applies the historical
+# migration contract to that clone so application/test metadata is untouched.
+target_metadata = build_migration_metadata()
 
 ALEMBIC_DIR = Path(__file__).parent
 BACKEND_ROOT = ALEMBIC_DIR.parent
@@ -57,8 +56,6 @@ config.set_main_option(
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
-
-target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
