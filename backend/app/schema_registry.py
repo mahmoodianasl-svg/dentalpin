@@ -1,4 +1,4 @@
-"""Authoritative SQLAlchemy metadata registration and migration contract.
+"""Authoritative SQLAlchemy model registration and migration metadata contract.
 
 Alembic autogenerate and schema-parity validation only see tables whose model
 modules have been imported into ``Base.metadata``. DentalPin is modular, so a
@@ -8,10 +8,13 @@ the metadata contract.
 W0.2 treats the shipped Alembic history as the schema source of truth. Some
 legacy ORM declarations also contain ``index=True`` shortcuts that were never
 created by migrations, while a few migration-owned partial indexes and checks
-were never represented in the ORM metadata. ``apply_migration_contract``
-normalizes those historical differences after all model modules are imported.
-It is intentionally metadata-only: it does not execute DDL and does not add new
-business rules.
+were never represented in the ORM metadata.
+
+The migration contract is applied to a cloned ``MetaData`` object rather than
+to global ``Base.metadata``. This is deliberate: application/unit-test helpers
+may still use the ORM metadata, while Alembic and the parity gate consume an
+isolated production-equivalent metadata view with no process-global side
+effects.
 """
 
 from __future__ import annotations
@@ -33,8 +36,8 @@ CORE_MODEL_MODULES: tuple[str, ...] = (
 MODULES_ROOT = Path(__file__).resolve().parent / "modules"
 
 # ORM-generated indexes that are absent from the authoritative migration
-# history. Keeping them in Base.metadata makes create_all/autogenerate describe
-# a schema that production migrations never create.
+# history. They are removed only from the cloned migration metadata; ordinary
+# Base.metadata remains untouched for application/test helper compatibility.
 MODEL_ONLY_INDEXES: tuple[str, ...] = (
     "ix_budget_access_logs_budget_id",
     "ix_budgets_public_token",
@@ -93,7 +96,7 @@ def _add_check(table: Table, name: str, sqltext: str) -> None:
 
 
 def apply_migration_contract(metadata: MetaData) -> None:
-    """Make SQLAlchemy metadata describe the schema produced by migrations."""
+    """Make a metadata copy describe the schema produced by migrations."""
     for index_name in MODEL_ONLY_INDEXES:
         _remove_index(metadata, index_name)
 
@@ -204,9 +207,20 @@ def apply_migration_contract(metadata: MetaData) -> None:
 
 
 def register_all_models() -> tuple[str, ...]:
-    """Import every active model and apply the authoritative schema contract."""
+    """Import every active model without mutating its declared metadata."""
     modules = CORE_MODEL_MODULES + discover_module_model_modules()
     for module_name in modules:
         import_module(module_name)
-    apply_migration_contract(Base.metadata)
     return modules
+
+
+def build_migration_metadata() -> MetaData:
+    """Return an isolated production-equivalent metadata view for Alembic."""
+    register_all_models()
+
+    migration_metadata = MetaData()
+    for table in Base.metadata.tables.values():
+        table.to_metadata(migration_metadata)
+
+    apply_migration_contract(migration_metadata)
+    return migration_metadata
