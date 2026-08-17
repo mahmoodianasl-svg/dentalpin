@@ -69,13 +69,11 @@ async def test_migrated_schema_matches_complete_metadata() -> None:
     try:
         async with engine.connect() as connection:
             diffs = await connection.run_sync(
-                lambda sync_connection: _collect_schema_diffs(
-                    sync_connection, migration_metadata
-                )
+                lambda sync_connection: _collect_schema_diffs(sync_connection, migration_metadata)
             )
     finally:
         await engine.dispose()
 
-    assert not diffs, "Migrated PostgreSQL schema differs from migration metadata:\n" + _format_diffs(
-        diffs
+    assert not diffs, (
+        "Migrated PostgreSQL schema differs from migration metadata:\n" + _format_diffs(diffs)
     )
