@@ -24,9 +24,10 @@ async def test_payment_integrity_triggers_are_deferred_constraints() -> None:
     try:
         async with engine.connect() as connection:
             rows = (
-                await connection.execute(
-                    text(
-                        """
+                (
+                    await connection.execute(
+                        text(
+                            """
                         SELECT c.relname AS table_name,
                                t.tgname AS trigger_name,
                                t.tgdeferrable,
@@ -38,9 +39,12 @@ async def test_payment_integrity_triggers_are_deferred_constraints() -> None:
                          WHERE NOT t.tgisinternal
                            AND t.tgname LIKE 'trg_%_financial_integrity'
                         """
+                        )
                     )
                 )
-            ).mappings().all()
+                .mappings()
+                .all()
+            )
     finally:
         await engine.dispose()
 
@@ -48,6 +52,4 @@ async def test_payment_integrity_triggers_are_deferred_constraints() -> None:
     assert installed == EXPECTED_TRIGGERS
     assert all(row["tgdeferrable"] for row in rows)
     assert all(row["tginitdeferred"] for row in rows)
-    assert {row["function_name"] for row in rows} == {
-        "enforce_payment_financial_integrity"
-    }
+    assert {row["function_name"] for row in rows} == {"enforce_payment_financial_integrity"}
