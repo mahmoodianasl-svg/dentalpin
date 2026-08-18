@@ -34,7 +34,7 @@ async def test_appointment_overlap_constraints_are_range_based_and_partial() -> 
                         text(
                             """
                             SELECT conname,
-                                   contype,
+                                   contype::text AS contype,
                                    pg_get_constraintdef(oid) AS definition
                              FROM pg_constraint
                              WHERE conrelid = 'appointments'::regclass
