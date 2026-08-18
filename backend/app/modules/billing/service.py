@@ -206,9 +206,11 @@ class InvoiceSeriesService:
         data: dict,
     ) -> InvoiceSeries:
         """Create a new invoice series."""
-        # If this is default, unset other defaults
+        # If this is default, demote the current default first. Flush the
+        # UPDATE before inserting the replacement so the partial unique index
+        # never sees two defaults for the same clinic and series type.
         if data.get("is_default"):
-            await db.execute(
+            result = await db.execute(
                 select(InvoiceSeries)
                 .where(
                     InvoiceSeries.clinic_id == clinic_id,
@@ -217,7 +219,9 @@ class InvoiceSeriesService:
                 )
                 .with_for_update()
             )
-            # SQLAlchemy will handle the update when we flush
+            for other_series in result.scalars().all():
+                other_series.is_default = False
+            await db.flush()
 
         series = InvoiceSeries(
             clinic_id=clinic_id,
