@@ -56,9 +56,7 @@ async def test_creating_default_replaces_only_same_type_default(
         .scalars()
         .all()
     )
-    defaults = {
-        (series.prefix, series.series_type): series.is_default for series in rows
-    }
+    defaults = {(series.prefix, series.series_type): series.is_default for series in rows}
 
     assert defaults == {
         ("FAC", "invoice"): False,
