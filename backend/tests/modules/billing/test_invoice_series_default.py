@@ -57,8 +57,7 @@ async def test_creating_default_replaces_only_same_type_default(
         .all()
     )
     defaults = {
-        (series.prefix, series.series_type): series.is_default
-        for series in rows
+        (series.prefix, series.series_type): series.is_default for series in rows
     }
 
     assert defaults == {
