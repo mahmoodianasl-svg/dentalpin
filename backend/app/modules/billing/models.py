@@ -66,6 +66,13 @@ class InvoiceSeries(Base, TimestampMixin):
         UniqueConstraint("clinic_id", "prefix", name="uq_invoice_series_clinic_prefix"),
         Index("idx_invoice_series_clinic", "clinic_id"),
         Index("idx_invoice_series_clinic_type", "clinic_id", "series_type"),
+        Index(
+            "uq_invoice_series_default_per_type",
+            "clinic_id",
+            "series_type",
+            unique=True,
+            postgresql_where=text("is_default IS TRUE"),
+        ),
     )
 
 
