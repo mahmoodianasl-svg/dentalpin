@@ -356,6 +356,12 @@ class BudgetHistory(Base):
         Index("idx_budget_history_budget", "budget_id"),
         Index("idx_budget_history_clinic", "clinic_id"),
         Index("idx_budget_history_changed_at", "changed_at"),
+        Index(
+            "idx_budget_history_clinic_budget_changed",
+            "clinic_id",
+            "budget_id",
+            "changed_at",
+        ),
     )
 
 

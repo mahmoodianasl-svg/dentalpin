@@ -165,6 +165,15 @@ class RecallContactAttempt(Base):
     outcome: Mapped[str] = mapped_column(String(30), nullable=False)
     note: Mapped[str | None] = mapped_column(Text)
 
+    __table_args__ = (
+        Index(
+            "ix_recall_attempts_clinic_recall_attempted",
+            "clinic_id",
+            "recall_id",
+            "attempted_at",
+        ),
+    )
+
 
 class RecallSettings(Base):
     """Per-clinic recall configuration.
