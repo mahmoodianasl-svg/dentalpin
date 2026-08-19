@@ -247,6 +247,26 @@ jobs:
           node-version: "24.19.0"
       - name: Generate modules.json with host paths
         run: python3 scripts/generate_frontend_modules_json.py
+      - name: Configure resilient Ubuntu package sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          for source_file in \
+            /etc/apt/apt-mirrors.txt \
+            /etc/apt/sources.list \
+            /etc/apt/sources.list.d/ubuntu.sources; do
+            if [[ -f "$source_file" ]]; then
+              sudo sed -i \
+                -e 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+                -e 's|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+                "$source_file"
+            fi
+          done
+          sudo tee /etc/apt/apt.conf.d/99-dentalpin-ci-network >/dev/null <<'EOF'
+          Acquire::Retries "3";
+          Acquire::http::Timeout "30";
+          Acquire::https::Timeout "30";
+          EOF
       - name: Install frontend deps + Playwright browsers
         working-directory: frontend
         run: |
