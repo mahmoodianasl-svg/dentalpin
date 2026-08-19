@@ -368,6 +368,12 @@ class InvoiceHistory(Base):
         Index("idx_invoice_history_invoice", "invoice_id"),
         Index("idx_invoice_history_clinic", "clinic_id"),
         Index("idx_invoice_history_changed_at", "changed_at"),
+        Index(
+            "idx_invoice_history_clinic_invoice_changed",
+            "clinic_id",
+            "invoice_id",
+            "changed_at",
+        ),
     )
 
 
@@ -409,4 +415,10 @@ class InvoiceSeriesHistory(Base):
         Index("idx_invoice_series_history_series", "series_id"),
         Index("idx_invoice_series_history_clinic", "clinic_id"),
         Index("idx_invoice_series_history_changed_at", "changed_at"),
+        Index(
+            "idx_invoice_series_history_clinic_series_changed",
+            "clinic_id",
+            "series_id",
+            "changed_at",
+        ),
     )
