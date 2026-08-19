@@ -4,7 +4,8 @@ This implementation wave pins supported runtime families and converts active npm
 
 ## Runtime baseline
 
-- Node: 24.19.0; Docker variant alpine3.24 (CI and frontend/docs builders)
+- Node: 24.19.0; frontend Docker variant bookworm-slim
+- Documentation portal builder: Node 24.19.0; Docker variant alpine3.24
 - Python: 3.11.15; Docker variant slim-trixie (CI/backend image)
 - Backend lock generator: uv 0.12.1
 

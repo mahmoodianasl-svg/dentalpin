@@ -331,7 +331,8 @@ class InvoicePayment(Base, TimestampMixin):
 class InvoiceHistory(Base):
     """Audit log for invoice changes.
 
-    Records all changes to invoices for traceability and compliance.
+    Records all changes to invoices for traceability and compliance. Rows are
+    append-only at the database layer and survive attempted parent deletion.
     """
 
     __tablename__ = "invoice_history"
@@ -339,7 +340,7 @@ class InvoiceHistory(Base):
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     clinic_id: Mapped[UUID] = mapped_column(ForeignKey("clinics.id"), index=True)
     invoice_id: Mapped[UUID] = mapped_column(
-        ForeignKey("invoices.id", ondelete="CASCADE"), index=True
+        ForeignKey("invoices.id", ondelete="RESTRICT"), index=True
     )
 
     # Action performed
@@ -373,7 +374,8 @@ class InvoiceHistory(Base):
 class InvoiceSeriesHistory(Base):
     """Audit log for invoice series changes.
 
-    Records all changes to series configuration for compliance tracking.
+    Records all changes to series configuration for compliance tracking. Rows
+    are append-only at the database layer and survive attempted parent deletion.
     """
 
     __tablename__ = "invoice_series_history"
@@ -381,7 +383,7 @@ class InvoiceSeriesHistory(Base):
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     clinic_id: Mapped[UUID] = mapped_column(ForeignKey("clinics.id"), index=True)
     series_id: Mapped[UUID] = mapped_column(
-        ForeignKey("invoice_series.id", ondelete="CASCADE"), index=True
+        ForeignKey("invoice_series.id", ondelete="RESTRICT"), index=True
     )
 
     # Action performed

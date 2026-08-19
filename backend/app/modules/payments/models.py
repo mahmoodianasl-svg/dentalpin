@@ -254,14 +254,14 @@ class PatientEarnedEntry(Base, TimestampMixin):
 
 
 class PaymentHistory(Base):
-    """Audit log for payment lifecycle changes."""
+    """Database-enforced append-only audit log for payment lifecycle changes."""
 
     __tablename__ = "payment_history"
 
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     clinic_id: Mapped[UUID] = mapped_column(ForeignKey("clinics.id"), index=True)
     payment_id: Mapped[UUID] = mapped_column(
-        ForeignKey("payments.id", ondelete="CASCADE"), index=True
+        ForeignKey("payments.id", ondelete="RESTRICT"), index=True
     )
 
     action: Mapped[str] = mapped_column(String(30))  # created|allocated|reallocated|refunded

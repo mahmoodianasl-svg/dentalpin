@@ -47,7 +47,7 @@ jobs:
           python -m pip install --no-deps -e .
       - name: Lint W0.2 schema controls
         working-directory: backend
-        run: ruff check app/schema_registry.py tests/test_schema_parity.py tests/test_payment_integrity_schema.py tests/test_invoice_series_integrity_schema.py tests/test_appointment_overlap_integrity_schema.py tests/test_alembic_roundtrip.py
+        run: ruff check app/schema_registry.py tests/test_schema_parity.py tests/test_payment_integrity_schema.py tests/test_invoice_series_integrity_schema.py tests/test_appointment_overlap_integrity_schema.py tests/test_financial_audit_history_schema.py tests/test_alembic_roundtrip.py
       - name: Verify irreversible migration inventory
         working-directory: backend
         run: >-
@@ -59,7 +59,7 @@ jobs:
         run: alembic upgrade heads
       - name: Compare migrated schema with complete SQLAlchemy metadata
         working-directory: backend
-        run: python -m pytest -m schema_parity tests/test_schema_parity.py tests/test_payment_integrity_schema.py tests/test_invoice_series_integrity_schema.py tests/test_appointment_overlap_integrity_schema.py -v --tb=short
+        run: python -m pytest -m schema_parity tests/test_schema_parity.py tests/test_payment_integrity_schema.py tests/test_invoice_series_integrity_schema.py tests/test_appointment_overlap_integrity_schema.py tests/test_financial_audit_history_schema.py -v --tb=short
       - name: Verify PostgreSQL backup and restore
         run: |
           set -euo pipefail
@@ -98,7 +98,7 @@ jobs:
         working-directory: backend
         env:
           DATABASE_URL: postgresql+asyncpg://dental:testpass@localhost:5432/dental_schema_restore
-        run: python -m pytest -m schema_parity tests/test_schema_parity.py tests/test_payment_integrity_schema.py tests/test_invoice_series_integrity_schema.py tests/test_appointment_overlap_integrity_schema.py -v --tb=short
+        run: python -m pytest -m schema_parity tests/test_schema_parity.py tests/test_payment_integrity_schema.py tests/test_invoice_series_integrity_schema.py tests/test_appointment_overlap_integrity_schema.py tests/test_financial_audit_history_schema.py -v --tb=short
 
   backend-regression:
     runs-on: ubuntu-latest
