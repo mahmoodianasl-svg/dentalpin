@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from sqlalchemy import (
+    DDL,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -15,9 +16,11 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    event,
     func,
+    text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, ExcludeConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base, TimestampMixin
@@ -137,20 +140,43 @@ class Appointment(Base, TimestampMixin):
     )
 
     __table_args__ = (
-        Index(
-            "idx_appointment_slot",
-            "clinic_id",
-            "cabinet_id",
-            "professional_id",
-            "start_time",
-            unique=True,
-            postgresql_where=(status != "cancelled"),
+        CheckConstraint(
+            "start_time < end_time",
+            name="ck_appointment_time_order",
+        ),
+        ExcludeConstraint(
+            ("clinic_id", "="),
+            ("professional_id", "="),
+            (func.tstzrange(start_time, end_time, "[)"), "&&"),
+            name="excl_appointment_professional_overlap",
+            using="gist",
+            where=text("status NOT IN ('cancelled', 'completed', 'no_show')"),
+        ),
+        ExcludeConstraint(
+            ("clinic_id", "="),
+            ("cabinet_id", "="),
+            (func.tstzrange(start_time, end_time, "[)"), "&&"),
+            name="excl_appointment_cabinet_overlap",
+            using="gist",
+            where=text(
+                "status NOT IN ('cancelled', 'completed', 'no_show') AND cabinet_id IS NOT NULL"
+            ),
         ),
         CheckConstraint(
             "status IN (" + ", ".join(f"'{s}'" for s in APPOINTMENT_STATUSES) + ")",
             name="ck_appointment_status_valid",
         ),
     )
+
+
+# PostgreSQL needs btree_gist for UUID equality inside the exclusion
+# constraints. Alembic installs it for migrated schemas; this hook keeps the
+# ORM/create_all test and development path equivalent.
+event.listen(
+    Appointment.__table__,
+    "before_create",
+    DDL("CREATE EXTENSION IF NOT EXISTS btree_gist").execute_if(dialect="postgresql"),
+)
 
 
 class AppointmentTreatment(Base):

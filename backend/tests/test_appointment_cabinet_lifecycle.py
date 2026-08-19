@@ -56,6 +56,14 @@ async def _world(db: AsyncSession) -> dict[str, UUID]:
         last_name="Who",
         is_active=True,
     )
+    dentist_b = User(
+        id=uuid4(),
+        email=f"d-{uuid4().hex[:6]}@t.c",
+        password_hash=hash_password("TestPass1234"),
+        first_name="Drb",
+        last_name="Who",
+        is_active=True,
+    )
     cabinet_a = Cabinet(
         id=uuid4(),
         clinic_id=clinic.id,
@@ -73,12 +81,13 @@ async def _world(db: AsyncSession) -> dict[str, UUID]:
         is_active=True,
     )
     patient = Patient(id=uuid4(), clinic_id=clinic.id, first_name="P", last_name="Q")
-    db.add_all([clinic, admin, dentist, cabinet_a, cabinet_b, patient])
+    db.add_all([clinic, admin, dentist, dentist_b, cabinet_a, cabinet_b, patient])
     await db.flush()
     db.add_all(
         [
             ClinicMembership(id=uuid4(), user_id=admin.id, clinic_id=clinic.id, role="admin"),
             ClinicMembership(id=uuid4(), user_id=dentist.id, clinic_id=clinic.id, role="dentist"),
+            ClinicMembership(id=uuid4(), user_id=dentist_b.id, clinic_id=clinic.id, role="dentist"),
         ]
     )
     await db.commit()
@@ -86,6 +95,7 @@ async def _world(db: AsyncSession) -> dict[str, UUID]:
         "clinic_id": clinic.id,
         "admin_id": admin.id,
         "dentist_id": dentist.id,
+        "dentist_b_id": dentist_b.id,
         "cabinet_a": cabinet_a.id,
         "cabinet_b": cabinet_b.id,
         "patient_id": patient.id,
@@ -98,6 +108,7 @@ async def _mkapt(
     *,
     start: datetime | None = None,
     cabinet_id: UUID | None = None,
+    professional_id: UUID | None = None,
 ) -> Appointment:
     start = start or datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
     apt = await AppointmentService.create_appointment(
@@ -105,7 +116,7 @@ async def _mkapt(
         world["clinic_id"],
         {
             "patient_id": world["patient_id"],
-            "professional_id": world["dentist_id"],
+            "professional_id": professional_id or world["dentist_id"],
             "cabinet_id": cabinet_id,
             "start_time": start,
             "end_time": start + timedelta(minutes=30),
@@ -284,10 +295,16 @@ async def test_assign_conflict_raises_integrity_error(
 ) -> None:
     world = await _world(db_session)
     start = datetime(2026, 6, 2, 10, 0, tzinfo=UTC)
-    # Two appointments at the same slot, different cabinets initially so
-    # the unique slot index isn't triggered on create.
+    # Two appointments at the same slot use different professionals and cabinets
+    # so only the cabinet conflict is introduced by the reassignment under test.
     apt1 = await _mkapt(db_session, world, start=start, cabinet_id=world["cabinet_a"])
-    apt2 = await _mkapt(db_session, world, start=start, cabinet_id=world["cabinet_b"])
+    apt2 = await _mkapt(
+        db_session,
+        world,
+        start=start,
+        cabinet_id=world["cabinet_b"],
+        professional_id=world["dentist_b_id"],
+    )
     assert apt1.id != apt2.id
 
     with pytest.raises(IntegrityError):
