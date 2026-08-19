@@ -274,7 +274,12 @@ async def refund_payment(
     reason_note: str | None,
     refunded_by: UUID,
 ) -> Refund:
-    """Create a Refund row, enforcing the per-payment cap."""
+    """Create and commit a Refund, then publish its domain event.
+
+    Billing consumes ``payment.refunded`` from a separate database
+    session.  The refund must therefore be committed before publication;
+    otherwise that subscriber recomputes invoice status from stale data.
+    """
     if amount <= 0:
         raise PaymentWorkflowError("Refund amount must be > 0")
 
@@ -326,6 +331,11 @@ async def refund_payment(
 
     await db.flush()
 
+    # This is the transaction boundary for refunds. Billing consumes the
+    # event in a separate session, so a flush is not enough for visibility.
+    # A failed commit raises before publication and leaves consumers quiet.
+    await db.commit()
+
     await event_bus.publish(
         EventType.PAYMENT_REFUNDED,
         {
@@ -334,6 +344,7 @@ async def refund_payment(
             "refund_id": str(refund.id),
             "amount": str(amount),
             "reason_code": reason_code,
+            "refunded_by": str(refunded_by),
             "occurred_at": now.isoformat(),
         },
     )

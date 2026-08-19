@@ -37,10 +37,9 @@ by tests in `tests/test_module_tools.py`.
 
 ## Events consumed
 
-- _none today_. The legacy ``budget.completed`` subscription was
-  removed in 2026-04 — that event was never actually published, so
-  the handler was orphaned. Re-add a subscription here when invoices
-  need to react to budget lifecycle events again.
+- `payment.refunded` — `events.on_payment_refunded` opens a separate
+  session and recomputes every linked invoice from committed payment and
+  refund rows. It may move `paid → partial` or `partial → issued`.
 
 ## Lifecycle
 

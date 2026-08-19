@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- fix(events): cover the `payment.refunded` subscriber with an
+  integration regression proving its separate session sees the committed
+  refund and moves a fully paid invoice back to `partial`.
+
 - i18n: add `ta` fallback to invoice description resolution in
   service layer so Tamil-localized treatment names appear on invoices.
 
