@@ -120,3 +120,46 @@ async def test_invoice_cannot_be_overpaid(
         headers=auth_headers,
     )
     assert r2.status_code == 400, r2.text
+
+
+@pytest.mark.asyncio
+async def test_refund_recalculates_invoice_after_refund_is_committed(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_clinic: Clinic,
+    test_patient: Patient,
+    db_session: AsyncSession,
+) -> None:
+    """The billing subscriber must see the refund in its own session.
+
+    ``payment.refunded`` is handled through a separate database session.
+    Publishing before the payments transaction commits makes that session
+    recompute from stale data and leave a fully paid invoice marked ``paid``.
+    """
+    inv = await _draft_invoice(db_session, test_clinic, test_patient, await _user_id(db_session))
+    issued = await client.post(
+        f"/api/v1/billing/invoices/{inv.id}/issue", json={}, headers=auth_headers
+    )
+    assert issued.status_code == 200, issued.text
+
+    paid = await client.post(
+        f"/api/v1/billing/invoices/{inv.id}/payments",
+        json={"amount": "100.00", "method": "cash", "payment_date": date.today().isoformat()},
+        headers=auth_headers,
+    )
+    assert paid.status_code == 201, paid.text
+    payment_id = paid.json()["data"]["payment_id"]
+
+    refunded = await client.post(
+        f"/api/v1/payments/{payment_id}/refunds",
+        json={
+            "amount": "25.00",
+            "method": "cash",
+            "reason_code": "overpaid",
+        },
+        headers=auth_headers,
+    )
+    assert refunded.status_code == 201, refunded.text
+
+    await db_session.refresh(inv)
+    assert inv.status == "partial"

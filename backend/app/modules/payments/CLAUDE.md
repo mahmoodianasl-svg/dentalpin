@@ -69,7 +69,7 @@ returning. Enforced by tests in `tests/test_module_tools.py`.
 
 - `payment.recorded` — payload `{clinic_id, payment_id, patient_id, amount, currency, method, payment_date, occurred_at}`.
 - `payment.allocated` — payload `{clinic_id, payment_id, allocation_id, target_type, target_id, amount, previous_target_type, previous_target_id, occurred_at}`. Fired on create and on reallocate.
-- `payment.refunded` — payload `{clinic_id, payment_id, refund_id, amount, reason_code, occurred_at}`.
+- `payment.refunded` — payload `{clinic_id, payment_id, refund_id, amount, reason_code, refunded_by, occurred_at}`. The refund transaction is committed before this event is published because billing consumes it from a separate database session.
 
 ## Events consumed
 

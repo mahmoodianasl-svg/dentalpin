@@ -14,9 +14,11 @@ Per-module slice of [`docs/events-catalog.md`](../../events-catalog.md)
 |-------|------|-----------|
 | `payment.recorded` | A payment is registered | — |
 | `payment.allocated` | An allocation is created or moved (create / reallocate) | — |
-| `payment.refunded` | A refund is registered against a payment | billing (invoice status recompute) |
+| `payment.refunded` | After the refund transaction commits | billing (invoice status recompute in a separate session) |
 
-Payload shapes are documented in the module `CLAUDE.md`.
+Payload shapes are documented in the module `CLAUDE.md`. Refund
+publication is intentionally after commit: billing's handler opens its
+own session and cannot recompute against uncommitted refund rows.
 
 ## Subscribed
 

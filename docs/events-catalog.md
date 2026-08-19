@@ -671,7 +671,7 @@ Maintained by `backend/scripts/generate_catalogs.py`.
 
 - **Constant:** `EventType.PAYMENT_REFUNDED`
 - **Publishers:**
-  - `payments` — `backend/app/modules/payments/workflow.py:329`
+  - `payments` — `backend/app/modules/payments/workflow.py:339`
 - **Subscribers:**
   - `billing`
 

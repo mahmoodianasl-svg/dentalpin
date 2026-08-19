@@ -5,20 +5,22 @@ last_verified_commit: 0000000
 
 # Billing — events
 
-> _Scaffolded stub — replace with proper documentation when this module is next touched._
-
 Per-module slice of [`docs/events-catalog.md`](../../events-catalog.md)
 (auto-generated). Update both files when adding or removing events.
 
 ## Published
 
-_This module does not publish any events._
+| Event | When | Consumers |
+|-------|------|-----------|
+| `invoice.issued` | An invoice or credit note is issued | verifactu, notifications, reports |
+| `invoice.sent` | Invoice delivery is requested | notifications |
+| `invoice.paid` | Recalculation moves an invoice to `paid` | notifications, reports |
 
 ## Subscribed
 
 | Event | Handler | Effect |
 |-------|---------|--------|
-| `payment.refunded` | _Handler module path._ | _What it does in response._ |
+| `payment.refunded` | `billing/events.py::on_payment_refunded` | Opens a new session and recomputes linked invoice status from committed allocations and refunds. |
 
 ## Adding a new event
 

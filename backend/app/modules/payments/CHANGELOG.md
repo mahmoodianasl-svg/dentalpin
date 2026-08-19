@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- fix(events): commit refunds before publishing `payment.refunded` so
+  cross-session consumers observe the new refund. Billing can now
+  recompute a paid invoice to `partial`/`issued` deterministically;
+  the payload also carries `refunded_by` for accurate audit history.
+
 - i18n: add Tamil locale (`ta.json`) with full UI coverage.
 
 - fix(earned): repair + guard against double-booked treatments
