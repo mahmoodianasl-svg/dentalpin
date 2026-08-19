@@ -18,6 +18,7 @@ import asyncpg
 import pytest
 
 from app.config import settings
+from app.core.plugins.processor import _downgrade_target_for
 
 pytestmark = pytest.mark.alembic_roundtrip
 
@@ -29,6 +30,7 @@ RECALLS_TABLES = {
     "recall_contact_attempts",
     "recall_settings",
 }
+RECALLS_BASE_REVISION = "rec_0001"
 
 
 def _alembic(*args: str) -> None:
@@ -68,7 +70,13 @@ def test_recalls_uninstall_roundtrip_is_branch_scoped() -> None:
     )
     baseline_other = before - RECALLS_TABLES
 
-    _alembic("downgrade", "recalls@-1")
+    # Use the same revision-counted target as the production uninstall path.
+    # The branch now has follow-up migrations, so a fixed ``@-1`` target would
+    # only remove the latest revision and leave the module tables installed.
+    _alembic(
+        "downgrade",
+        _downgrade_target_for("recalls", RECALLS_BASE_REVISION),
+    )
 
     after_down = _list_tables()
     assert RECALLS_TABLES.isdisjoint(after_down), (

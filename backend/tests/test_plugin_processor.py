@@ -57,6 +57,11 @@ def test_count_owned_revisions_for_schedules() -> None:
     assert _count_owned_revisions("schedules") == 1
 
 
+def test_downgrade_target_counts_all_recalls_branch_revisions() -> None:
+    assert _count_owned_revisions("recalls") == 2
+    assert _downgrade_target_for("recalls", "rec_0001") == "recalls@-2"
+
+
 def test_count_owned_revisions_for_legacy_main_linear_module_is_zero() -> None:
     # reports has no migrations/versions/ directory at all.
     assert _count_owned_revisions("reports") == 0
