@@ -1,5 +1,5 @@
 ARG NODE_VERSION=24.19.0
-ARG NODE_VARIANT=alpine3.24
+ARG NODE_VARIANT=bookworm-slim
 FROM node:${NODE_VERSION}-${NODE_VARIANT} AS builder
 
 ARG API_BASE_URL=http://localhost:8000
