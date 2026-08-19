@@ -258,7 +258,8 @@ class BudgetSignature(Base):
     """Digital signature record for budget acceptance.
 
     Stores signature data for audit trail and legal compliance.
-    MVP uses click-to-accept; extensible for external providers.
+    MVP uses click-to-accept; extensible for external providers. Once recorded,
+    a signature is immutable and cannot be erased with its parent budget.
     """
 
     __tablename__ = "budget_signatures"
@@ -266,7 +267,7 @@ class BudgetSignature(Base):
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     clinic_id: Mapped[UUID] = mapped_column(ForeignKey("clinics.id"), index=True)
     budget_id: Mapped[UUID] = mapped_column(
-        ForeignKey("budgets.id", ondelete="CASCADE"), index=True
+        ForeignKey("budgets.id", ondelete="RESTRICT"), index=True
     )
 
     # Signature type
@@ -318,7 +319,8 @@ class BudgetSignature(Base):
 class BudgetHistory(Base):
     """Audit log for budget changes.
 
-    Records all changes to budgets for traceability and compliance.
+    Records all changes to budgets for traceability and compliance. Rows are
+    append-only at the database layer and cannot be cascade-deleted.
     """
 
     __tablename__ = "budget_history"
@@ -326,7 +328,7 @@ class BudgetHistory(Base):
     id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     clinic_id: Mapped[UUID] = mapped_column(ForeignKey("clinics.id"), index=True)
     budget_id: Mapped[UUID] = mapped_column(
-        ForeignKey("budgets.id", ondelete="CASCADE"), index=True
+        ForeignKey("budgets.id", ondelete="RESTRICT"), index=True
     )
 
     # Action performed
