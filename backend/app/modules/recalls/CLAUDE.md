@@ -80,7 +80,7 @@ when redaction is on.
 
 | Event                                | Handler                          | Effect |
 |--------------------------------------|----------------------------------|--------|
-| `appointment.scheduled`              | `on_appointment_scheduled`       | Auto-link a pending recall (same patient, due_month ≤ appt month) when `auto_link_on_appointment_scheduled` is on. |
+| `appointment.scheduled`              | `on_appointment_scheduled`       | In a fresh DB session, auto-link a pending recall (same patient, due_month ≤ appt month) when `auto_link_on_appointment_scheduled` is on. The producer must publish only after the appointment commits. |
 | `appointment.completed`              | `on_appointment_completed`       | Mark linked recall as `done`. |
 | `appointment.cancelled`              | `on_appointment_cancelled`       | Unlink, revert `contacted_scheduled` → `pending`. |
 | `treatment_plan.treatment_completed` | `on_treatment_plan_completed`    | Logging-only stub. Suggestion is pulled by the frontend via `GET /suggestions/next`; keeps state stateless and avoids stale dismissals. |
@@ -132,6 +132,10 @@ monthly call list. Mobile-first layout via `useBreakpoint`.
   explicit link via the "Agendar cita" row action (which passes
   `recall_id`) or `POST /recalls/{id}/link-appointment`. Better one
   miss than one wrong link — recall history is patient-trust-critical.
+- **`appointment.scheduled` must describe a committed row.** The handler
+  opens its own session and writes `recalls.linked_appointment_id`, which is
+  an FK to agenda. Publishing while the creation transaction is still open
+  makes the FK insert race or deadlock.
 
 ## Related ADRs
 

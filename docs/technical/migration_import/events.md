@@ -18,7 +18,10 @@ Plus every event published naturally by the mapped target services —
 `patient.created`, `payment.recorded`, `document.uploaded`, etc. The
 importer **does not** suppress them: downstream modules
 (`patient_timeline`, `recalls`, …) get the same signal they would for
-a manually-created entity. This is intentional.
+a manually-created entity. This is intentional. Events whose subscribers
+require a committed target row, currently `appointment.scheduled`, are
+queued per mapper context and released after the containing batch commits;
+a failed entity savepoint discards its queued events.
 
 ### Internal
 

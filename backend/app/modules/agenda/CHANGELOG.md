@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- fix(events): publish `appointment.scheduled` only after the appointment
+  transaction commits. Recalls consumes the event in an independent session
+  and writes an FK back to the appointment; the previous pre-commit dispatch
+  could fail or deadlock while the row was still invisible.
+
 - fix(timezones): appointment times entered as naive clinic-local
   wall-clock were persisted unconverted as UTC, so the dashboard
   (which parses instants with `new Date()`) showed them shifted by

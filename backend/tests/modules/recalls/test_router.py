@@ -9,12 +9,17 @@ Issue #62.
 
 from __future__ import annotations
 
+import asyncio
+from uuid import UUID
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth.models import Clinic
+from app.core.auth.models import Clinic, ClinicMembership
 from app.modules.patients.models import Patient
+from app.modules.recalls.models import Recall
 
 
 @pytest.mark.asyncio
@@ -57,6 +62,57 @@ async def test_create_then_duplicate_guard_updates_existing(
     body = list_res.json()
     assert body["total"] == 1
     assert body["data"][0]["patient"]["first_name"] == "Test"
+
+
+@pytest.mark.asyncio
+async def test_scheduled_appointment_auto_links_recall_after_commit(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_clinic: Clinic,
+    test_patient: Patient,
+    db_session: AsyncSession,
+) -> None:
+    """The recalls subscriber must see the appointment in its own session."""
+    membership = (
+        await db_session.execute(
+            select(ClinicMembership).where(ClinicMembership.clinic_id == test_clinic.id)
+        )
+    ).scalar_one()
+    membership.is_professional = True
+
+    recall_response = await client.post(
+        "/api/v1/recalls/",
+        json={
+            "patient_id": str(test_patient.id),
+            "due_month": "2026-08-01",
+            "reason": "checkup",
+        },
+        headers=auth_headers,
+    )
+    assert recall_response.status_code == 201, recall_response.text
+    recall_id = recall_response.json()["data"]["id"]
+    await db_session.commit()
+
+    async with asyncio.timeout(15):
+        appointment_response = await client.post(
+            "/api/v1/agenda/appointments",
+            json={
+                "patient_id": str(test_patient.id),
+                "professional_id": str(membership.user_id),
+                "cabinet": "Gabinete 1",
+                "start_time": "2026-09-01T10:00:00Z",
+                "end_time": "2026-09-01T10:30:00Z",
+                "treatment_type": "Check-up",
+            },
+            headers=auth_headers,
+        )
+    assert appointment_response.status_code == 201, appointment_response.text
+
+    recall = await db_session.get(Recall, UUID(recall_id))
+    assert recall is not None
+    await db_session.refresh(recall)
+    assert str(recall.linked_appointment_id) == appointment_response.json()["data"]["id"]
+    assert recall.status == "contacted_scheduled"
 
 
 @pytest.mark.asyncio

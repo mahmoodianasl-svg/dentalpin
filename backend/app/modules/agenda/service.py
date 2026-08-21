@@ -420,7 +420,10 @@ class AppointmentService:
 
         Records the synthetic initial status event (``from_status=None``,
         ``to_status=<status>``) so downstream analytics can always count on
-        the history being complete from first principles.
+        the history being complete from first principles. Persistence-only:
+        live callers must follow this with
+        :meth:`commit_and_publish_scheduled`; batch callers must queue the
+        same payload and publish it only after their outer commit succeeds.
         """
         planned_item_ids = data.pop("planned_item_ids", None)
 
@@ -496,20 +499,6 @@ class AppointmentService:
                 db.add(treatment)
             await db.flush()
 
-        await event_bus.publish(
-            EventType.APPOINTMENT_SCHEDULED,
-            {
-                "appointment_id": str(appointment.id),
-                "clinic_id": str(appointment.clinic_id),
-                "patient_id": str(appointment.patient_id) if appointment.patient_id else None,
-                "professional_id": str(appointment.professional_id),
-                "start_time": appointment.start_time.isoformat(),
-                "end_time": appointment.end_time.isoformat(),
-                "treatment_type": appointment.treatment_type,
-                "cabinet": appointment.cabinet,
-            },
-        )
-
         await db.refresh(appointment, ["patient", "professional", "treatments"])
         for treatment in appointment.treatments:
             await db.refresh(treatment, ["planned_item", "catalog_item"])
@@ -519,6 +508,38 @@ class AppointmentService:
                     await db.refresh(treatment.planned_item.treatment, ["teeth", "catalog_item"])
 
         return appointment
+
+    @staticmethod
+    def scheduled_event_payload(appointment: Appointment) -> dict:
+        """Build the canonical ``appointment.scheduled`` payload."""
+        return {
+            "appointment_id": str(appointment.id),
+            "clinic_id": str(appointment.clinic_id),
+            "patient_id": (str(appointment.patient_id) if appointment.patient_id else None),
+            "professional_id": str(appointment.professional_id),
+            "start_time": appointment.start_time.isoformat(),
+            "end_time": appointment.end_time.isoformat(),
+            "treatment_type": appointment.treatment_type,
+            "cabinet": appointment.cabinet,
+        }
+
+    @staticmethod
+    async def commit_and_publish_scheduled(
+        db: AsyncSession,
+        appointment: Appointment,
+    ) -> None:
+        """Commit a new appointment before publishing its live event.
+
+        Subscribers such as recalls open an independent database session
+        and may write foreign keys back to the appointment. Publishing from
+        the uncommitted creation transaction makes that write fail or
+        deadlock, so the commit is an explicit part of this event boundary.
+        """
+        await db.commit()
+        await event_bus.publish(
+            EventType.APPOINTMENT_SCHEDULED,
+            AppointmentService.scheduled_event_payload(appointment),
+        )
 
     @staticmethod
     async def update_appointment(

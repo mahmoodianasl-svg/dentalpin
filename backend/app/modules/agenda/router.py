@@ -134,6 +134,7 @@ async def create_appointment(
             data.model_dump(exclude_unset=True),
             created_by=ctx.user_id,
         )
+        await AppointmentService.commit_and_publish_scheduled(db, appointment)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

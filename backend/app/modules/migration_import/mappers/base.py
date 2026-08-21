@@ -13,6 +13,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.events import event_bus
+
 from ..models import EntityMapping
 
 if TYPE_CHECKING:
@@ -277,6 +279,28 @@ class MapperContext:
     # the first patient mapped. Empty by default so test paths that
     # bypass the link mapper just see the 1:1 fallback.
     client_to_patients: dict[str, list[UUID]] = field(default_factory=dict)
+    # Target-module events queued by mappers. The pipeline publishes these
+    # only after the outer batch commit succeeds, so subscribers never act
+    # on rows that are still hidden inside an import savepoint/transaction.
+    pending_events: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+
+    def queue_event(self, event_type: str, data: dict[str, Any]) -> None:
+        """Queue a target-module event for the next successful batch commit."""
+        self.pending_events.append((event_type, data))
+
+    def pending_event_checkpoint(self) -> int:
+        """Return a marker used to discard events when a savepoint rolls back."""
+        return len(self.pending_events)
+
+    def discard_events_after(self, checkpoint: int) -> None:
+        """Drop events queued by an entity whose savepoint failed."""
+        del self.pending_events[checkpoint:]
+
+    async def publish_committed_events(self) -> None:
+        """Publish and clear events after the caller's outer commit succeeds."""
+        pending, self.pending_events = self.pending_events, []
+        for event_type, data in pending:
+            await event_bus.publish(event_type, data)
 
 
 class Mapper(Protocol):

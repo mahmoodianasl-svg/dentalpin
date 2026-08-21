@@ -49,7 +49,8 @@ DESTRUCTIVE). Invalid transitions return the allowed next states from
 
 ## Events emitted
 
-- `appointment.scheduled` — new appointment
+- `appointment.scheduled` — new appointment, published only after its
+  transaction commits
 - `appointment.updated` — generic update
 - `appointment.status_changed` — published alongside specific status events; payload carries `from_status`/`to_status`/`changed_at`/`changed_by`
 - `appointment.cabinet_changed` — cabinet (re)assignment, payload includes `from_cabinet_id`/`to_cabinet_id` (nullable)
@@ -78,6 +79,11 @@ None.
 - **Status transitions go through `AppointmentService.transition`** —
   it publishes both the specific status event and the generic
   `appointment.status_changed`.
+- **Appointment creation is persistence-only.** HTTP and agent callers must
+  finish with `AppointmentService.commit_and_publish_scheduled`; batch
+  callers must queue the canonical payload and publish it after their outer
+  commit. Several subscribers open independent sessions and write FKs back
+  to the appointment, so pre-commit dispatch can fail or deadlock.
 - **Cabinet assignment uses `assign_cabinet`** — it publishes
   `appointment.cabinet_changed` with both old and new ids.
 - **Mobile free-slot computation is client-side** (#61). The composable
