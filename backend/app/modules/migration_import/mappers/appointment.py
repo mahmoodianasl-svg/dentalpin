@@ -33,6 +33,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from app.core.events import EventType
 from app.modules.agenda.service import AppointmentService
 from app.modules.clinical_notes.models import ClinicalNote
 
@@ -140,6 +141,10 @@ class AppointmentMapper:
         }
         data = {k: v for k, v in data.items() if v is not None}
 
+        # Bulk imports persist appointments inside savepoint/batch
+        # transactions. The event is queued below and dispatched only after
+        # the outer batch commit, preserving normal target-module signals
+        # without exposing an uncommitted appointment to subscribers.
         appointment = await AppointmentService.create_appointment(
             ctx.db, ctx.clinic_id, data, created_by=ctx.created_by
         )
@@ -159,6 +164,11 @@ class AppointmentMapper:
             professional_id=professional_id,
             canonical_uuid=canonical_uuid,
             source_system=source_system,
+        )
+
+        ctx.queue_event(
+            EventType.APPOINTMENT_SCHEDULED,
+            AppointmentService.scheduled_event_payload(appointment),
         )
 
         return appointment.id

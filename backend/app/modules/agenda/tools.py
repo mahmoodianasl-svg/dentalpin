@@ -136,6 +136,7 @@ async def _book_appointment(ctx: AgentContext, params: BookAppointmentArgs) -> d
             params.model_dump(exclude_none=True),
             created_by=ctx.supervisor_id,
         )
+        await AppointmentService.commit_and_publish_scheduled(ctx.db, appt)
     except IntegrityError:
         # Slot conflict. Roll back the failed insert so the session stays
         # usable for the rest of the turn; surface a structured error the

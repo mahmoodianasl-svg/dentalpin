@@ -1,6 +1,6 @@
 ---
 module: agenda
-last_verified_commit: 50cce0f
+last_verified_commit: HEAD
 ---
 
 # Agenda — events
@@ -18,7 +18,7 @@ referenced in that file.
 
 | Event | When | Consumers |
 |-------|------|-----------|
-| `appointment.scheduled` | Appointment created | notifications, patient_timeline, recalls, schedules |
+| `appointment.scheduled` | Appointment transaction committed (or import batch committed) | notifications, patient_timeline, recalls, schedules |
 | `appointment.updated` | Appointment fields edited | schedules |
 | `appointment.status_changed` | Any status transition (generic) | — |
 | `appointment.confirmed` | → confirmed | patient_timeline |
@@ -33,6 +33,10 @@ referenced in that file.
 Payloads carry `clinic_id`, `appointment_id`, and (where relevant)
 `patient_id` / `professional_id` / status fields. See the module
 `CLAUDE.md` for the per-event payload contract.
+
+`AppointmentService.create_appointment` is persistence-only. Live callers
+commit and publish through `commit_and_publish_scheduled`; migration imports
+queue the same payload and release it after the containing batch commit.
 
 ## Subscribed
 

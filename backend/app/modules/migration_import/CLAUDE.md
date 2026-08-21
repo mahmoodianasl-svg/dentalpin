@@ -50,7 +50,9 @@ be promoted to admin to run a migration.
 | `migration.binary.resolved` | sync agent uploaded a matching binary | `job_id`, `staging_id`, `document_id` |
 
 Plus every event the mapped service publishes naturally
-(`patient.created`, `payment.recorded`, …).
+(`patient.created`, `payment.recorded`, …). Target events that require a
+committed row, currently `appointment.scheduled`, are queued in
+`MapperContext` and published only after the containing batch commits.
 
 ## Events consumed
 
@@ -112,6 +114,10 @@ mappers. Used to bump `ImportJob.processed_entities`.
 - **No rollback in v1.** If a job fails halfway, the partial state
   stays. Admin restores from backup if catastrophic. Document this in
   the UI.
+- **Do not publish target events from an entity savepoint.** Queue them on
+  `MapperContext`; `_run_pipeline` discards events when that savepoint fails
+  and publishes the survivors after the outer batch commit. This preserves
+  normal target-module behavior without exposing uncommitted rows.
 - **The passphrase is never persisted.** Held in process memory only
   during validate/preview.
 - **Binaries go through `media.DocumentService`** so the storage path,

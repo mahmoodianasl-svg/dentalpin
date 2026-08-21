@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- fix(events): preserve `appointment.scheduled` during DPMF imports while
+  deferring delivery until the containing batch commits. Failed entity
+  savepoints discard their queued event, so downstream notifications,
+  timelines, schedules and recall links never observe phantom appointments.
+
 - i18n: add Tamil locale (`ta.json`) with full UI coverage.
 
 - style(lint): first ESLint pass over this module's frontend layer —

@@ -446,6 +446,7 @@ class ImportJobService:
                     # would persist. ``begin_nested`` issues a SAVEPOINT;
                     # exiting the ``with`` block with an exception
                     # releases it.
+                    event_checkpoint = ctx.pending_event_checkpoint()
                     try:
                         async with db.begin_nested():
                             await mapper.apply(
@@ -458,6 +459,7 @@ class ImportJobService:
                                 source_system=source_system,
                             )
                     except Exception as exc:
+                        ctx.discard_events_after(event_checkpoint)
                         # Savepoint already rolled back. One entity blowing
                         # up does not fail the whole job — surface it as a
                         # warning and continue. The op gets a single
@@ -496,6 +498,7 @@ class ImportJobService:
                             "after_canonical_uuid": canonical_uuid,
                         }
                         await db.commit()
+                        await ctx.publish_committed_events()
                         await publish_entity_persisted(job.id, entity_type, processed_in_batch)
                         processed_in_batch = 0
                 # End-of-entity flush: persist the remaining tail counter
@@ -504,6 +507,7 @@ class ImportJobService:
                 if processed_in_batch:
                     job.processed_entities = job.processed_entities + processed_in_batch
                 await db.commit()
+                await ctx.publish_committed_events()
                 if processed_in_batch:
                     await publish_entity_persisted(job.id, entity_type, processed_in_batch)
 

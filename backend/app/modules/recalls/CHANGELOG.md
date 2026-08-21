@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- fix(events): pin the appointment auto-link regression: the
+  `appointment.scheduled` subscriber can now read the committed appointment
+  and persist `linked_appointment_id` without an FK race or deadlock.
+
 - i18n: add Tamil locale (`ta.json`) with full UI coverage.
 
 - style(lint): first ESLint pass over this module's frontend layer —

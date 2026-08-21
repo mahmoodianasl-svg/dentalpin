@@ -1,28 +1,36 @@
 ---
 module: recalls
-last_verified_commit: 0000000
+last_verified_commit: HEAD
 ---
 
 # Recalls — events
-
-> _Scaffolded stub — replace with proper documentation when this module is next touched._
 
 Per-module slice of [`docs/events-catalog.md`](../../events-catalog.md)
 (auto-generated). Update both files when adding or removing events.
 
 ## Published
 
-_This module does not publish any events._
+| Event | When |
+|-------|------|
+| `recall.created` | A new recall is inserted (duplicate-guard updates do not publish) |
+| `recall.completed` | A recall transitions to `done` |
+| `recall.snoozed` | A recall is moved to a later due month |
+| `recall.cancelled` | A recall is cancelled |
+
+`recall.due` is reserved for a future scheduler and is not published in V1.
 
 ## Subscribed
 
 | Event | Handler | Effect |
 |-------|---------|--------|
-| `appointment.cancelled` | _Handler module path._ | _What it does in response._ |
-| `appointment.completed` | _Handler module path._ | _What it does in response._ |
-| `appointment.scheduled` | _Handler module path._ | _What it does in response._ |
-| `patient.archived` | _Handler module path._ | _What it does in response._ |
-| `treatment_plan.treatment_completed` | _Handler module path._ | _What it does in response._ |
+| `appointment.cancelled` | `events.on_appointment_cancelled` | Unlink active recalls and revert `contacted_scheduled` to `pending` |
+| `appointment.completed` | `events.on_appointment_completed` | Mark the recall linked to that appointment `done` |
+| `appointment.scheduled` | `events.on_appointment_scheduled` | In a fresh DB session, auto-link one unambiguous due recall after the appointment has committed |
+| `patient.archived` | `events.on_patient_archived` | Move active recalls to `needs_review` |
+| `treatment_plan.treatment_completed` | `events.on_treatment_plan_completed` | Logging-only hook; suggestions remain pull-based |
+
+The `appointment.scheduled` producer must publish after commit: this handler
+opens an independent session and persists an FK back to the appointment.
 
 ## Adding a new event
 
