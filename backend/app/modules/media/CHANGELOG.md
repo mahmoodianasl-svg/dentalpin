@@ -2,14 +2,17 @@
 
 ## Unreleased
 
+- fix(events): consume `patient.archived` only after the patient transaction
+  commits, so the independently committed document cascade cannot outlive a
+  rolled-back archive.
+
 - fix(events): repair the `patient.archived` cascade, which had never
   run (audit event-bus #1, #95). The handler signature took
   `(self, db, data)` but the bus calls `handler(data)`, raising
   `TypeError` on every archive; it also read `data["clinic_id"]` while
   the publisher sent only `patient_id`. Handler now takes `(data)`,
-  opens its own session + commits (publish-before-commit), and guards a
-  missing payload. Depends on the patients publisher now emitting
-  `clinic_id`.
+  opens its own session + commits, and guards a missing payload. Depends on
+  the patients publisher emitting `clinic_id` and publishing after commit.
 
 - perf(lists): drop the ``select_from(query.subquery())`` count
   anti-pattern in ``DocumentService.list_documents`` and

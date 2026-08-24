@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- fix(events): queue `patient.created` until the containing DPMF batch commits,
+  matching the appointment boundary and preventing welcome-notification
+  subscribers from querying a patient row that is not visible yet. Failed
+  entity savepoints discard the queued event.
+
 - fix(events): preserve `appointment.scheduled` during DPMF imports while
   deferring delivery until the containing batch commits. Failed entity
   savepoints discard their queued event, so downstream notifications,

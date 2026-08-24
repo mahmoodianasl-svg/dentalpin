@@ -60,7 +60,8 @@ the full consent path — never bypasses `do_not_contact`.
 
 ## Events consumed
 
-- `patient.created`
+- `patient.created` (published after commit so the welcome task's independent
+  session can load the patient)
 - `appointment.scheduled` / `appointment.cancelled`
 - `budget.sent` / `budget.accepted`
 - `invoice.sent`
@@ -75,6 +76,9 @@ the full consent path — never bypasses `do_not_contact`.
 - **No outbound network calls during a request.** Sending is queued via
   `tasks.py` (APScheduler) so the request transaction can commit
   before the SMTP attempt.
+- **`patient.created` must describe a committed row.** The welcome handler
+  opens a fresh session; pre-commit delivery makes the new patient invisible
+  and silently loses the welcome notification.
 - **Provider abstraction** lives behind `EMAIL_PROVIDER`. `console`
   prints to stdout — use it in dev.
 - **Templates are i18n-aware** (Spanish UI strings). Never hardcode

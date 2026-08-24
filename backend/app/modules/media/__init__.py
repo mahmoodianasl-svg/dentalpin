@@ -71,9 +71,9 @@ class MediaModule(BaseModule):
         """Cascade soft-archive of a patient's documents when they are
         archived.
 
-        The event bus calls handlers as ``handler(data)`` and publishes
-        before the request commits, so this opens its own session and
-        commits independently (same pattern as the recalls handler).
+        The event bus calls handlers as ``handler(data)`` after the patient
+        archive commits. This handler opens its own session and commits the
+        document cascade independently (same pattern as the recalls handler).
         """
         patient_id = data.get("patient_id")
         clinic_id = data.get("clinic_id")

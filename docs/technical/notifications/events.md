@@ -1,11 +1,9 @@
 ---
 module: notifications
-last_verified_commit: 0000000
+last_verified_commit: HEAD
 ---
 
 # Notifications — events
-
-> _Scaffolded stub — replace with proper documentation when this module is next touched._
 
 Per-module slice of [`docs/events-catalog.md`](../../events-catalog.md)
 (auto-generated). Update both files when adding or removing events.
@@ -33,6 +31,10 @@ Published by the gateway (`gateway.py`) across the outbox lifecycle:
 | `budget.sent` | `handlers.on_budget_sent` | Enqueue `budget_sent` (only when `send_method=email`). |
 | `budget.accepted` | `handlers.on_budget_accepted` | Enqueue `budget_accepted`. |
 | `invoice.sent` | `handlers.on_invoice_sent` | Enqueue `invoice_sent` (only when `send_method=email`). |
+
+`patient.created` is delivered only after the patient commit. The welcome
+handler opens a fresh database session, so this boundary guarantees the row is
+visible instead of silently dropping the notification.
 
 ## Adding a new event
 

@@ -81,6 +81,7 @@ async def _create_patient(ctx: AgentContext, params: CreatePatientArgs) -> dict:
     patient = await PatientService.create_patient(
         ctx.db, ctx.clinic_id, params.model_dump(exclude_none=True)
     )
+    await PatientService.commit_and_publish_created(ctx.db, patient)
     return {"id": patient.id, "full_name": f"{patient.first_name} {patient.last_name}"}
 
 
@@ -93,6 +94,7 @@ async def _update_patient(ctx: AgentContext, params: UpdatePatientArgs) -> dict:
     if not data:
         return {"error": "nothing_to_update"}
     patient = await PatientService.update_patient(ctx.db, patient, data)
+    await PatientService.commit_and_publish_updated(ctx.db, patient, list(data.keys()))
     return _summary(patient)
 
 

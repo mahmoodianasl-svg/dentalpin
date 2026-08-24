@@ -136,6 +136,9 @@ monthly call list. Mobile-first layout via `useBreakpoint`.
   opens its own session and writes `recalls.linked_appointment_id`, which is
   an FK to agenda. Publishing while the creation transaction is still open
   makes the FK insert race or deadlock.
+- **`patient.archived` must describe a committed row.** The handler updates
+  recalls in an independent transaction; pre-commit delivery could persist
+  `needs_review` even if the patient archive rolls back.
 
 ## Related ADRs
 
