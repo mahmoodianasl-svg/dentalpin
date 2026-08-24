@@ -26,7 +26,7 @@ Published by the gateway (`gateway.py`) across the outbox lifecycle:
 | Event | Handler | Effect |
 |-------|---------|--------|
 | `appointment.scheduled` | `handlers.on_appointment_scheduled` | Enqueue `appointment_confirmation`. |
-| `appointment.cancelled` | `handlers.on_appointment_cancelled` | Enqueue `appointment_cancelled`. |
+| `appointment.cancelled` | `handlers.on_appointment_cancelled` | After the transition commits, enqueue `appointment_cancelled`. |
 | `patient.created` | `handlers.on_patient_created` | Enqueue `welcome`. |
 | `budget.sent` | `handlers.on_budget_sent` | Enqueue `budget_sent` (only when `send_method=email`). |
 | `budget.accepted` | `handlers.on_budget_accepted` | Enqueue `budget_accepted`. |
@@ -35,6 +35,9 @@ Published by the gateway (`gateway.py`) across the outbox lifecycle:
 `patient.created` is delivered only after the patient commit. The welcome
 handler opens a fresh database session, so this boundary guarantees the row is
 visible instead of silently dropping the notification.
+
+The appointment-cancellation handler starts independent notification work, so
+agenda likewise commits the cancellation before publishing its event.
 
 ## Adding a new event
 

@@ -44,6 +44,18 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
     "no_show": set(),
 }
 
+# Specific lifecycle events remain available for existing subscribers while
+# ``appointment.status_changed`` is the canonical generic signal. Live callers
+# publish both only after the transition transaction commits.
+TRANSITION_EVENT_TYPES: dict[str, str] = {
+    "confirmed": EventType.APPOINTMENT_CONFIRMED,
+    "checked_in": EventType.APPOINTMENT_CHECKED_IN,
+    "in_treatment": EventType.APPOINTMENT_IN_TREATMENT,
+    "completed": EventType.APPOINTMENT_COMPLETED,
+    "cancelled": EventType.APPOINTMENT_CANCELLED,
+    "no_show": EventType.APPOINTMENT_NO_SHOW,
+}
+
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
@@ -551,9 +563,10 @@ class AppointmentService:
         """Update an appointment.
 
         When ``data`` carries a ``status`` field, the status change is funneled
-        through :meth:`transition` so the audit trail, ``current_status_since``
-        and the bus events stay consistent with every other path that mutates
-        status.
+        through :meth:`transition` so the audit trail and
+        ``current_status_since`` stay consistent with every other path that
+        mutates status. Live callers must finish a changed status with
+        :meth:`commit_and_publish_transition`.
         """
         requested_status = data.pop("status", None)
 
@@ -686,9 +699,10 @@ class AppointmentService:
         - Validates against :data:`VALID_TRANSITIONS`.
         - Appends a row to ``appointment_status_events``.
         - Updates ``appointment.status`` and ``current_status_since``.
-        - Publishes the specific bus event (completed / cancelled / no_show)
-          so existing subscribers keep working. The generic
-          ``APPOINTMENT_STATUS_CHANGED`` event is wired in chunk 2.
+        Persistence-only: live callers must follow a successful mutation with
+        :meth:`commit_and_publish_transition`. This prevents subscribers that
+        open independent sessions from committing side effects for a status
+        transition that later rolls back.
 
         Raises :class:`AlreadyInStateError` if ``to_status`` equals the
         current status, and :class:`InvalidTransitionError` otherwise.
@@ -725,7 +739,18 @@ class AppointmentService:
         appointment.current_status_since = now
         await db.flush()
 
-        payload = {
+        return appointment
+
+    @staticmethod
+    def transition_event_payload(
+        appointment: Appointment,
+        *,
+        from_status: str,
+        changed_by: UUID | None = None,
+        note: str | None = None,
+    ) -> dict:
+        """Build the canonical payload shared by both transition events."""
+        return {
             "appointment_id": str(appointment.id),
             "clinic_id": str(appointment.clinic_id),
             "patient_id": (str(appointment.patient_id) if appointment.patient_id else None),
@@ -735,30 +760,36 @@ class AppointmentService:
             "start_time": appointment.start_time.isoformat(),
             "end_time": appointment.end_time.isoformat(),
             "from_status": from_status,
-            "to_status": to_status,
-            "changed_at": now.isoformat(),
+            "to_status": appointment.status,
+            "changed_at": appointment.current_status_since.isoformat(),
             "changed_by": str(changed_by) if changed_by else None,
             "note": note,
         }
 
-        # Always publish the generic transition event — the recommended
-        # subscription for new consumers.
+    @staticmethod
+    async def commit_and_publish_transition(
+        db: AsyncSession,
+        appointment: Appointment,
+        *,
+        from_status: str,
+        changed_by: UUID | None = None,
+        note: str | None = None,
+    ) -> None:
+        """Commit a status transition before publishing its live events."""
+        specific = TRANSITION_EVENT_TYPES.get(appointment.status)
+        if specific is None:
+            raise ValueError(f"No lifecycle event exists for status '{appointment.status}'")
+
+        await db.commit()
+        payload = AppointmentService.transition_event_payload(
+            appointment,
+            from_status=from_status,
+            changed_by=changed_by,
+            note=note,
+        )
+
         await event_bus.publish(EventType.APPOINTMENT_STATUS_CHANGED, payload)
-
-        # Specific events are kept for backward compatibility with existing
-        # subscribers (patient_timeline, billing hooks, etc.).
-        specific = {
-            "confirmed": EventType.APPOINTMENT_CONFIRMED,
-            "checked_in": EventType.APPOINTMENT_CHECKED_IN,
-            "in_treatment": EventType.APPOINTMENT_IN_TREATMENT,
-            "completed": EventType.APPOINTMENT_COMPLETED,
-            "cancelled": EventType.APPOINTMENT_CANCELLED,
-            "no_show": EventType.APPOINTMENT_NO_SHOW,
-        }.get(to_status)
-        if specific is not None:
-            await event_bus.publish(specific, payload)
-
-        return appointment
+        await event_bus.publish(specific, payload)
 
     @staticmethod
     async def assign_cabinet(

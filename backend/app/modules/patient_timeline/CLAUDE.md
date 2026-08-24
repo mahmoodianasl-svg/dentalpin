@@ -52,6 +52,9 @@ updates. See `docs/events-catalog.md` for the full list.
   than deleting the original.
 - **Event handlers must be cheap and idempotent.** The same event can
   arrive twice; deduplicate by `(event_type, source_id)`.
+- **Appointment lifecycle events describe committed transitions.** Timeline
+  handlers persist append-only rows in independent sessions; agenda must not
+  publish a status event before the appointment commit succeeds.
 - **No upstream coupling.** Don't import any of the producing modules'
   services. The whole point of this module is that it's loosely
   coupled to everyone.

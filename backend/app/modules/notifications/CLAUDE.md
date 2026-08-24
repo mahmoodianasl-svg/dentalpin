@@ -79,6 +79,9 @@ the full consent path — never bypasses `do_not_contact`.
 - **`patient.created` must describe a committed row.** The welcome handler
   opens a fresh session; pre-commit delivery makes the new patient invisible
   and silently loses the welcome notification.
+- **`appointment.cancelled` describes a committed transition.** The handler
+  starts independent notification work, so it must not run for a cancellation
+  that can still roll back.
 - **Provider abstraction** lives behind `EMAIL_PROVIDER`. `console`
   prints to stdout — use it in dev.
 - **Templates are i18n-aware** (Spanish UI strings). Never hardcode

@@ -52,7 +52,7 @@ DESTRUCTIVE). Invalid transitions return the allowed next states from
 - `appointment.scheduled` — new appointment, published only after its
   transaction commits
 - `appointment.updated` — generic update
-- `appointment.status_changed` — published alongside specific status events; payload carries `from_status`/`to_status`/`changed_at`/`changed_by`
+- `appointment.status_changed` — published after commit alongside specific status events; payload carries `from_status`/`to_status`/`changed_at`/`changed_by`
 - `appointment.cabinet_changed` — cabinet (re)assignment, payload includes `from_cabinet_id`/`to_cabinet_id` (nullable)
 - `agenda.visit_note_updated` — visit-level note (reuses `AppointmentTreatment.notes`)
 
@@ -76,9 +76,12 @@ None.
 - **Schedules must NOT be a dependency.** The `schedules` module depends
   on agenda; the data flow is one-way. Never declare
   `depends: ["schedules"]` here. See `schedules/CLAUDE.md`.
-- **Status transitions go through `AppointmentService.transition`** —
-  it publishes both the specific status event and the generic
-  `appointment.status_changed`.
+- **Status transitions go through `AppointmentService.transition`** — it is
+  persistence-only. HTTP and agent callers must finish with
+  `AppointmentService.commit_and_publish_transition`, which commits before
+  publishing the generic `appointment.status_changed` and the specific status
+  event. Subscribers open independent sessions and may commit durable side
+  effects, so pre-commit delivery can leave phantom work after a rollback.
 - **Appointment creation is persistence-only.** HTTP and agent callers must
   finish with `AppointmentService.commit_and_publish_scheduled`; batch
   callers must queue the canonical payload and publish it after their outer

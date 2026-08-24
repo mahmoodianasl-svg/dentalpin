@@ -168,9 +168,17 @@ async def _update_appointment_status(
     appt = await AppointmentService.get_appointment(ctx.db, ctx.clinic_id, params.appointment_id)
     if appt is None:
         return {"error": "not_found"}
+    from_status = appt.status
     try:
         appt = await AppointmentService.transition(
             ctx.db, appt, params.to_status, changed_by=ctx.supervisor_id, note=params.note
+        )
+        await AppointmentService.commit_and_publish_transition(
+            ctx.db,
+            appt,
+            from_status=from_status,
+            changed_by=ctx.supervisor_id,
+            note=params.note,
         )
     except AlreadyInStateError:
         return {"error": "already_in_state", "status": appt.status}
@@ -192,10 +200,18 @@ async def _cancel_appointment(ctx: AgentContext, params: CancelAppointmentArgs) 
     appt = await AppointmentService.get_appointment(ctx.db, ctx.clinic_id, params.appointment_id)
     if appt is None:
         return {"error": "not_found"}
+    from_status = appt.status
     try:
         appt = await AppointmentService.cancel_appointment(
             ctx.db, appt, changed_by=ctx.supervisor_id
         )
+        if appt.status != from_status:
+            await AppointmentService.commit_and_publish_transition(
+                ctx.db,
+                appt,
+                from_status=from_status,
+                changed_by=ctx.supervisor_id,
+            )
     except InvalidTransitionError:
         return {
             "error": "not_cancellable",

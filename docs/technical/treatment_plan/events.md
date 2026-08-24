@@ -33,13 +33,16 @@ resulting `odontogram.treatment.performed` carries `unit_price: null`
 
 | Event | Handler | Effect |
 |-------|---------|--------|
-| `appointment.completed` | `events.py::on_appointment_completed` | Mark planned items as performed if linked. |
+| `appointment.completed` | `events.py::on_appointment_completed` | After the appointment transition commits, mark planned items as performed if linked. |
 | `budget.accepted` | `events.py::on_budget_accepted` | pending → active; also closed(`rejected_by_patient`) → active when the patient accepts a resent version (issue #162). Idempotent. |
 | `budget.rejected` | `events.py::on_budget_rejected` | pending → closed (`closure_reason=rejected_by_patient`). |
 | `budget.renegotiated` | `events.py::on_budget_renegotiated` | pending → draft via `reopen_from_budget` (never writes the budget row — the publisher's open transaction holds it locked). |
 | `budget.cancelled` | `events.py::on_budget_cancelled` | pending → draft via `reopen_from_budget` (issue #162). No-op without `plan_id` (standalone budget). |
 | `budget.superseded` | `events.py::on_budget_superseded` | Repoint `plan.budget_id` to the resent version — only while the plan still points at the superseded budget (idempotent). Status untouched. |
 | `odontogram.treatment.performed` | `events.py::on_treatment_performed` | Mark the matching pending item completed **and cancel its pending sessions** (no session events) — the performed event already carried the full price to payments; a later session completion would book the same money twice. |
+
+The appointment-completion boundary is producer-owned: agenda commits before
+dispatch because this handler writes and commits in an independent session.
 
 ## Adding a new event
 

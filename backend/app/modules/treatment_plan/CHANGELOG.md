@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- fix(events): consume `appointment.completed` only after the appointment
+  transition commits, preventing performed-item updates from surviving a
+  rolled-back completion.
+
 - i18n: add `ta` fallback to plan item name resolution in service
   layer so Tamil-localized treatment names display correctly.
   

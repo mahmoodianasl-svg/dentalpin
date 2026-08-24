@@ -24,7 +24,10 @@ in v1. (Every tool call is already recorded in `agent_audit_logs`.)
 
 | Event | Handler | Effect |
 |-------|---------|--------|
-| `appointment.cancelled` | `events.on_appointment_cancelled` | Create a `copilot_nudges` row ("fill the freed slot from recalls?"), deduped per appointment with a same-day TTL. Subscription only — no import of the publisher (ADR 0003). |
+| `appointment.cancelled` | `events.on_appointment_cancelled` | After the transition commits, create a `copilot_nudges` row ("fill the freed slot from recalls?"), deduped per appointment with a same-day TTL. Subscription only — no import of the publisher (ADR 0003). |
+
+Agenda owns the commit-before-publish boundary because the nudge handler writes
+and commits in an independent session.
 
 ## Adding a new event
 
