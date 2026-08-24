@@ -37,6 +37,7 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
+from app.core.events import EventType
 from app.modules.patients.service import PatientService
 
 from .base import MapperContext
@@ -286,6 +287,10 @@ class PatientMapper:
             source_system=source_system,
             dentalpin_table="patients",
             dentalpin_id=patient.id,
+        )
+        ctx.queue_event(
+            EventType.PATIENT_CREATED,
+            PatientService.created_event_payload(patient),
         )
         return patient.id
 

@@ -96,6 +96,7 @@ async def create_patient(
     patient = await PatientService.create_patient(
         db, ctx.clinic_id, data.model_dump(exclude_unset=True)
     )
+    await PatientService.commit_and_publish_created(db, patient)
     return ApiResponse(data=PatientResponse.model_validate(patient))
 
 
@@ -131,7 +132,9 @@ async def update_patient(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Patient not found",
         )
-    patient = await PatientService.update_patient(db, patient, data.model_dump(exclude_unset=True))
+    updates = data.model_dump(exclude_unset=True)
+    patient = await PatientService.update_patient(db, patient, updates)
+    await PatientService.commit_and_publish_updated(db, patient, list(updates.keys()))
     return ApiResponse(data=PatientResponse.model_validate(patient))
 
 
@@ -149,7 +152,8 @@ async def delete_patient(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Patient not found",
         )
-    await PatientService.archive_patient(db, patient)
+    patient = await PatientService.archive_patient(db, patient)
+    await PatientService.commit_and_publish_archived(db, patient)
 
 
 # --- Extended info ------------------------------------------------------
@@ -187,5 +191,7 @@ async def update_patient_extended(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Patient not found",
         )
-    patient = await PatientService.update_patient(db, patient, data.model_dump(exclude_unset=True))
+    updates = data.model_dump(exclude_unset=True)
+    patient = await PatientService.update_patient(db, patient, updates)
+    await PatientService.commit_and_publish_updated(db, patient, list(updates.keys()))
     return ApiResponse(data=PatientExtendedResponse.model_validate(patient))

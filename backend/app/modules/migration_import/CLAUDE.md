@@ -51,8 +51,9 @@ be promoted to admin to run a migration.
 
 Plus every event the mapped service publishes naturally
 (`patient.created`, `payment.recorded`, …). Target events that require a
-committed row, currently `appointment.scheduled`, are queued in
-`MapperContext` and published only after the containing batch commits.
+committed row, currently `patient.created` and `appointment.scheduled`, are
+queued in `MapperContext` and published only after the containing batch
+commits.
 
 ## Events consumed
 

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- fix(events): commit patient create, update and archive transactions before
+  publishing their lifecycle events. Canonical payload builders keep live
+  HTTP/copilot writes and queued migration-import events identical, while a
+  failed commit now suppresses delivery to notifications, media and recalls.
+
 - i18n: add Tamil translations for patient components and demo seed data
 
 - style(lint): first ESLint pass over this module's frontend layer —

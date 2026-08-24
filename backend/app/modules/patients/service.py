@@ -249,45 +249,90 @@ class PatientService:
 
     @staticmethod
     async def create_patient(db: AsyncSession, clinic_id: UUID, data: dict) -> Patient:
+        """Create and flush a patient without publishing its event.
+
+        Live callers must follow this with :meth:`commit_and_publish_created`;
+        batch callers must queue the same canonical payload and publish it only
+        after their outer transaction commits.
+        """
         patient = Patient(clinic_id=clinic_id, **data)
         db.add(patient)
         await db.flush()
+        return patient
 
+    @staticmethod
+    def created_event_payload(patient: Patient) -> dict:
+        """Build the canonical ``patient.created`` payload."""
+        return {
+            "patient_id": str(patient.id),
+            "clinic_id": str(patient.clinic_id),
+        }
+
+    @staticmethod
+    async def commit_and_publish_created(db: AsyncSession, patient: Patient) -> None:
+        """Commit a new patient before publishing its live event."""
+        await db.commit()
         await event_bus.publish(
             EventType.PATIENT_CREATED,
-            {"patient_id": str(patient.id), "clinic_id": str(clinic_id)},
+            PatientService.created_event_payload(patient),
         )
-        return patient
 
     @staticmethod
     async def update_patient(db: AsyncSession, patient: Patient, data: dict) -> Patient:
         """Update an existing patient.
 
         ``data`` should come from ``model_dump(exclude_unset=True)`` so
-        unspecified fields are preserved and explicit ``None`` clears.
+        unspecified fields are preserved and explicit ``None`` clears. This
+        method only flushes; live callers must commit and publish explicitly.
         """
         for key, value in data.items():
             setattr(patient, key, value)
 
         await db.flush()
-
-        await event_bus.publish(
-            EventType.PATIENT_UPDATED,
-            {
-                "patient_id": str(patient.id),
-                "clinic_id": str(patient.clinic_id),
-                "changes": list(data.keys()),
-            },
-        )
         return patient
 
     @staticmethod
+    def updated_event_payload(patient: Patient, changes: list[str]) -> dict:
+        """Build the canonical ``patient.updated`` payload."""
+        return {
+            "patient_id": str(patient.id),
+            "clinic_id": str(patient.clinic_id),
+            "changes": changes,
+        }
+
+    @staticmethod
+    async def commit_and_publish_updated(
+        db: AsyncSession,
+        patient: Patient,
+        changes: list[str],
+    ) -> None:
+        """Commit a patient update before publishing its live event."""
+        await db.commit()
+        await event_bus.publish(
+            EventType.PATIENT_UPDATED,
+            PatientService.updated_event_payload(patient, changes),
+        )
+
+    @staticmethod
     async def archive_patient(db: AsyncSession, patient: Patient) -> Patient:
+        """Soft-archive and flush a patient without publishing its event."""
         patient.status = "archived"
         await db.flush()
+        return patient
 
+    @staticmethod
+    def archived_event_payload(patient: Patient) -> dict:
+        """Build the canonical ``patient.archived`` payload."""
+        return {
+            "patient_id": str(patient.id),
+            "clinic_id": str(patient.clinic_id),
+        }
+
+    @staticmethod
+    async def commit_and_publish_archived(db: AsyncSession, patient: Patient) -> None:
+        """Commit a patient archive before publishing its live event."""
+        await db.commit()
         await event_bus.publish(
             EventType.PATIENT_ARCHIVED,
-            {"patient_id": str(patient.id), "clinic_id": str(patient.clinic_id)},
+            PatientService.archived_event_payload(patient),
         )
-        return patient

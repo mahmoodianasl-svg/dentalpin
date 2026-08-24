@@ -64,7 +64,8 @@ through `attachment_registry`.
 
 ## Events consumed
 
-- `patient.archived` → cascade soft-archive of associated documents.
+- `patient.archived` → after the patient commit, cascade soft-archive of
+  associated documents in an independent transaction.
 
 ## Lifecycle
 
@@ -85,6 +86,9 @@ through `attachment_registry`.
   path extends the base allowlist with `image/heic|heif|webp|gif` so
   iOS uploads work without per-clinic config changes.
 - **Files must be scoped by `clinic_id`** in the storage layout.
+- **`patient.archived` must describe a committed row.** The handler commits
+  its document cascade independently; pre-commit delivery could leave
+  documents archived when the patient archive later rolls back.
 - **`media_attachments.owner_type` has no CHECK constraint** by design
   — see ADR 0007. Validation lives in `attachment_registry`.
 

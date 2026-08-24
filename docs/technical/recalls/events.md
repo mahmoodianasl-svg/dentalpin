@@ -31,6 +31,9 @@ Per-module slice of [`docs/events-catalog.md`](../../events-catalog.md)
 
 The `appointment.scheduled` producer must publish after commit: this handler
 opens an independent session and persists an FK back to the appointment.
+The same boundary applies to `patient.archived`: its handler commits recall
+updates independently, so it must not run for an archive that can still roll
+back.
 
 ## Adding a new event
 

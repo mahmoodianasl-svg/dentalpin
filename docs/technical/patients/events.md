@@ -1,6 +1,6 @@
 ---
 module: patients
-last_verified_commit: 0e9a0ac
+last_verified_commit: HEAD
 ---
 
 # Patients — events
@@ -12,11 +12,15 @@ Per-module slice of [`docs/events-catalog.md`](../../events-catalog.md)
 
 | Event | Source | When | Payload |
 |-------|--------|------|---------|
-| `patient.created` | `service.py:PatientService.create` | After insert + extended row commit. | `patient_id` (UUID), `clinic_id` (UUID) |
-| `patient.updated` | `service.py:PatientService.update` | After partial update commit. | `patient_id` (UUID), `changes` (dict of changed fields) |
-| `patient.archived` | `service.py:PatientService.archive` | After soft-delete (status → archived). | `patient_id` (UUID) |
+| `patient.created` | `service.py:PatientService.commit_and_publish_created` | After the create transaction commits. | `patient_id` (UUID string), `clinic_id` (UUID string) |
+| `patient.updated` | `service.py:PatientService.commit_and_publish_updated` | After the update transaction commits. | `patient_id` (UUID string), `clinic_id` (UUID string), `changes` (list of field names) |
+| `patient.archived` | `service.py:PatientService.commit_and_publish_archived` | After the soft-archive transaction commits. | `patient_id` (UUID string), `clinic_id` (UUID string) |
 
 Subscribers are listed in the auto-generated [events catalog](../../events-catalog.md).
+
+The mutation methods only flush. HTTP and copilot callers use the matching
+`commit_and_publish_*` helper. Migration imports build the same payload and
+queue it until their containing batch commit succeeds.
 
 ## Subscribed
 

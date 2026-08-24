@@ -2,16 +2,15 @@
 
 Two regressions are covered:
 
-* the publisher must include ``clinic_id`` in the payload (it didn't);
+* the publisher must include ``clinic_id`` in the payload (it didn't) and
+  must publish only after the patient archive commits;
 * the media handler must accept the bus calling convention
   ``handler(data)`` — its old ``(self, db, data)`` signature raised
   ``TypeError`` on every archive.
 
-The end-to-end "documents actually get archived" path is not asserted
-here: the handler opens its own ``async_session_maker`` session (bound to
-the import-time event loop), which pytest-asyncio's per-test loop can't
-drive. That path is covered by ``DocumentService.archive_patient_documents``'s
-own tests; the two regressions above are what broke.
+The document service has separate cascade coverage. This file also verifies
+that an independent subscriber session sees the committed archived patient,
+which pins the producer-side transaction boundary shared by media and recalls.
 """
 
 from __future__ import annotations
@@ -19,10 +18,12 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth.models import Clinic
 from app.core.events import EventType, event_bus
+from app.database import async_session_maker
 from app.modules.media import MediaModule
 from app.modules.patients.models import Patient
 from app.modules.patients.service import PatientService
@@ -35,19 +36,30 @@ async def test_archive_patient_payload_includes_clinic_id(
     db_session: AsyncSession,
 ) -> None:
     captured: list[dict] = []
+    visible_statuses: list[str | None] = []
 
     async def _spy(data: dict) -> None:
         captured.append(data)
+        async with async_session_maker() as verification_db:
+            patient = await verification_db.scalar(
+                select(Patient).where(
+                    Patient.id == test_patient.id,
+                    Patient.clinic_id == test_clinic.id,
+                )
+            )
+            visible_statuses.append(patient.status if patient else None)
 
     event_bus.subscribe(EventType.PATIENT_ARCHIVED, _spy)
     try:
-        await PatientService.archive_patient(db_session, test_patient)
+        patient = await PatientService.archive_patient(db_session, test_patient)
+        await PatientService.commit_and_publish_archived(db_session, patient)
     finally:
         event_bus.unsubscribe(EventType.PATIENT_ARCHIVED, _spy)
 
     assert captured, "patient.archived was not published"
     assert captured[0]["patient_id"] == str(test_patient.id)
     assert captured[0]["clinic_id"] == str(test_clinic.id)
+    assert visible_statuses == ["archived"]
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- fix(events): receive `patient.created` only after the patient commit, so the
+  welcome-email task's independent session can reliably load the new patient
+  instead of silently dropping the notification.
+
 - i18n: add Tamil locale (`notifications-ta.json`) with full UI coverage.
 
 - style(lint): first ESLint pass over this module's frontend layer —

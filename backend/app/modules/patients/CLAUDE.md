@@ -43,11 +43,12 @@ fields stay manual.
 
 | Event | When | Payload keys |
 |---|---|---|
-| `patient.created` | `PatientService.create` succeeds | `patient_id`, `clinic_id` |
-| `patient.updated` | `PatientService.update` succeeds | `patient_id`, `clinic_id`, `changes` |
-| `patient.archived` | `PatientService.archive` (soft-delete) | `patient_id`, `clinic_id` |
+| `patient.created` | Create transaction commits | `patient_id`, `clinic_id` |
+| `patient.updated` | Update transaction commits | `patient_id`, `clinic_id`, `changes` |
+| `patient.archived` | Soft-archive transaction commits | `patient_id`, `clinic_id` |
 
-See `service.py:113`, `service.py:131`, `service.py:142`.
+See the lifecycle payload builders and `commit_and_publish_*` helpers in
+`service.py`.
 
 ## Events consumed
 
@@ -64,6 +65,10 @@ None.
   archived; the row stays. Do not add a hard-delete endpoint.
 - **Multi-tenancy.** Every query MUST filter `Patient.clinic_id`.
   This includes future agent tools.
+- **Lifecycle events describe committed rows.** Service mutation methods are
+  persistence-only. Live callers finish with the corresponding
+  `commit_and_publish_*` helper; batch callers queue the canonical payload and
+  publish it only after their outer commit succeeds.
 - **No cross-module FKs into patients without `depends: ["patients"]`**
   in the consuming module's manifest.
 - **`do_not_contact` flag** — operational opt-out used by recalls and

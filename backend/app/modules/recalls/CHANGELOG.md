@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- fix(events): receive `patient.archived` only after the patient commit, so
+  the independently committed `needs_review` cascade cannot survive a rolled-
+  back patient archive.
+
 - fix(events): pin the appointment auto-link regression: the
   `appointment.scheduled` subscriber can now read the committed appointment
   and persist `linked_appointment_id` without an FK race or deadlock.
