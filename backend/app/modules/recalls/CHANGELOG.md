@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- fix(events): publish recall create, snooze, cancellation and completion
+  events only after their database transaction commits. HTTP, Copilot-tool and
+  appointment-subscriber paths now share the same commit-before-publish
+  boundary, and failed commits emit no lifecycle event.
+
 - fix(events): receive appointment completion/cancellation only after the
   transition commits, so independently committed recall updates cannot outlive
   a rolled-back appointment status change.

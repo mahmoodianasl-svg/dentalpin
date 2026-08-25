@@ -129,6 +129,7 @@ async def _create_recall(ctx: AgentContext, params: CreateRecallArgs) -> dict:
         params.model_dump(exclude_none=True),
         recommended_by=ctx.supervisor_id,
     )
+    await RecallService.commit_and_publish_created(ctx.db, recall, created)
     return {
         "id": recall.id,
         "created": created,
@@ -171,6 +172,7 @@ async def _snooze_recall(ctx: AgentContext, params: SnoozeRecallArgs) -> dict:
     )
     if recall is None:
         return {"error": "not_found"}
+    await RecallService.commit_and_publish_snoozed(ctx.db, recall, params.months)
     return {"id": recall.id, "due_month": recall.due_month, "status": recall.status}
 
 
@@ -180,6 +182,7 @@ async def _complete_recall(ctx: AgentContext, params: CompleteRecallArgs) -> dic
     )
     if recall is None:
         return {"error": "not_found"}
+    await RecallService.commit_and_publish_completed(ctx.db, recall)
     return {"id": recall.id, "status": recall.status}
 
 

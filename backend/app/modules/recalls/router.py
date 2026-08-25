@@ -116,7 +116,7 @@ async def create_recall(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ApiResponse[RecallResponse]:
     try:
-        recall, _created = await RecallService.create(
+        recall, created = await RecallService.create(
             db,
             clinic_id=ctx.clinic_id,
             data=data.model_dump(),
@@ -124,7 +124,7 @@ async def create_recall(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    await db.commit()
+    await RecallService.commit_and_publish_created(db, recall, created)
     return ApiResponse(data=_serialise(recall))
 
 
@@ -306,7 +306,7 @@ async def snooze_recall(
     )
     if not recall:
         raise HTTPException(status_code=404, detail="Recall not found")
-    await db.commit()
+    await RecallService.commit_and_publish_snoozed(db, recall, data.months)
     return ApiResponse(data=RecallResponse.model_validate(recall))
 
 
@@ -327,7 +327,7 @@ async def cancel_recall(
     )
     if not recall:
         raise HTTPException(status_code=404, detail="Recall not found")
-    await db.commit()
+    await RecallService.commit_and_publish_cancelled(db, recall)
     return ApiResponse(data=RecallResponse.model_validate(recall))
 
 
@@ -341,7 +341,7 @@ async def mark_recall_done(
     recall = await RecallService.mark_done(db, ctx.clinic_id, recall_id, by_user=ctx.user_id)
     if not recall:
         raise HTTPException(status_code=404, detail="Recall not found")
-    await db.commit()
+    await RecallService.commit_and_publish_completed(db, recall)
     return ApiResponse(data=RecallResponse.model_validate(recall))
 
 

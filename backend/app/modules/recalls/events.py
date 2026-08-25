@@ -95,15 +95,17 @@ async def on_appointment_completed(data: dict[str, Any]) -> None:
                     Recall.status.in_(("contacted_scheduled", "pending")),
                 )
             )
+            completed: list[Recall] = []
             for recall in result.scalars().all():
-                await RecallService.mark_done(
+                updated = await RecallService.mark_done(
                     db,
                     clinic_id=clinic_id,
                     recall_id=recall.id,
                     by_user=None,
-                    commit=False,
                 )
-            await db.commit()
+                if updated is not None:
+                    completed.append(updated)
+            await RecallService.commit_and_publish_completed_many(db, completed)
         except Exception as exc:
             logger.error("recalls.on_appointment_completed failed: %s", exc, exc_info=True)
             await db.rollback()

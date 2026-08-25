@@ -245,7 +245,9 @@ class RecallService:
 
         Returns ``(recall, created)`` — ``created`` is False when the
         duplicate guard updated an existing row instead of inserting.
-        Publishes ``recall.created`` only when ``created`` is True.
+        Live callers must follow this with
+        :meth:`commit_and_publish_created`; the duplicate-guard update is
+        committed without publishing ``recall.created``.
 
         Raises ``ValueError`` if ``patient_id`` does not belong to
         ``clinic_id`` — otherwise a caller (HTTP or copilot tool) could
@@ -295,8 +297,18 @@ class RecallService:
         )
         db.add(recall)
         await db.flush()
-        await event_bus.publish(EventType.RECALL_CREATED, _build_event_payload(recall))
         return recall, True
+
+    @staticmethod
+    async def commit_and_publish_created(
+        db: AsyncSession,
+        recall: Recall,
+        created: bool,
+    ) -> None:
+        """Commit a recall create/update before publishing a new-row event."""
+        await db.commit()
+        if created:
+            await event_bus.publish(EventType.RECALL_CREATED, _build_event_payload(recall))
 
     @staticmethod
     async def update(
@@ -351,10 +363,19 @@ class RecallService:
         if recall.status not in ("done", "cancelled"):
             recall.status = "pending"
         await db.flush()
+        return recall
+
+    @staticmethod
+    async def commit_and_publish_snoozed(
+        db: AsyncSession,
+        recall: Recall,
+        months: int,
+    ) -> None:
+        """Commit a recall snooze before publishing its event."""
         payload = _build_event_payload(recall)
         payload["snoozed_months"] = months
+        await db.commit()
         await event_bus.publish(EventType.RECALL_SNOOZED, payload)
-        return recall
 
     @staticmethod
     async def cancel(
@@ -373,8 +394,14 @@ class RecallService:
                 recall.reason_note + "\n" if recall.reason_note else ""
             ) + f"cancelled: {note}"
         await db.flush()
-        await event_bus.publish(EventType.RECALL_CANCELLED, _build_event_payload(recall))
         return recall
+
+    @staticmethod
+    async def commit_and_publish_cancelled(db: AsyncSession, recall: Recall) -> None:
+        """Commit a recall cancellation before publishing its event."""
+        payload = _build_event_payload(recall)
+        await db.commit()
+        await event_bus.publish(EventType.RECALL_CANCELLED, payload)
 
     @staticmethod
     async def mark_done(
@@ -382,7 +409,6 @@ class RecallService:
         clinic_id: UUID,
         recall_id: UUID,
         by_user: UUID | None,
-        commit: bool = True,
     ) -> Recall | None:
         recall = await RecallService.get(db, clinic_id, recall_id)
         if not recall:
@@ -390,8 +416,28 @@ class RecallService:
         recall.status = "done"
         recall.completed_at = datetime.now(UTC)
         await db.flush()
-        await event_bus.publish(EventType.RECALL_COMPLETED, _build_event_payload(recall))
         return recall
+
+    @staticmethod
+    def completed_event_payload(recall: Recall) -> dict[str, Any]:
+        """Build the canonical ``recall.completed`` payload."""
+        return _build_event_payload(recall)
+
+    @staticmethod
+    async def commit_and_publish_completed(db: AsyncSession, recall: Recall) -> None:
+        """Commit a completed recall before publishing its event."""
+        await RecallService.commit_and_publish_completed_many(db, [recall])
+
+    @staticmethod
+    async def commit_and_publish_completed_many(
+        db: AsyncSession,
+        recalls: Sequence[Recall],
+    ) -> None:
+        """Commit one transaction, then publish all completed-recall events."""
+        payloads = [RecallService.completed_event_payload(recall) for recall in recalls]
+        await db.commit()
+        for payload in payloads:
+            await event_bus.publish(EventType.RECALL_COMPLETED, payload)
 
     @staticmethod
     async def log_attempt(
