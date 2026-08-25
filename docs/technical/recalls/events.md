@@ -12,12 +12,18 @@ Per-module slice of [`docs/events-catalog.md`](../../events-catalog.md)
 
 | Event | When |
 |-------|------|
-| `recall.created` | A new recall is inserted (duplicate-guard updates do not publish) |
-| `recall.completed` | A recall transitions to `done` |
-| `recall.snoozed` | A recall is moved to a later due month |
-| `recall.cancelled` | A recall is cancelled |
+| `recall.created` | A new recall transaction commits (duplicate-guard updates commit without publishing) |
+| `recall.completed` | A recall `done` transition commits |
+| `recall.snoozed` | A recall snooze transaction commits |
+| `recall.cancelled` | A recall cancellation transaction commits |
 
 `recall.due` is reserved for a future scheduler and is not published in V1.
+
+Live HTTP and Copilot-tool mutations use the service's
+`commit_and_publish_*` helpers. The appointment-completion subscriber batches
+all matching recall updates into one transaction and publishes their
+`recall.completed` events only after that commit succeeds. Failed commits emit
+no recall lifecycle events.
 
 ## Subscribed
 

@@ -70,11 +70,11 @@ when redaction is on.
 
 | Event              | When                                                 |
 |--------------------|------------------------------------------------------|
-| `recall.created`   | new recall row inserted (duplicate-guard fires = no event) |
+| `recall.created`   | new recall transaction commits (duplicate-guard updates commit without an event) |
 | `recall.due`       | reserved for future cron — not published in V1       |
-| `recall.completed` | recall transitions to `done`                         |
-| `recall.snoozed`   | recall snoozed N months                              |
-| `recall.cancelled` | recall cancelled (manual or via `patient.archived`)  |
+| `recall.completed` | recall `done` transition commits                     |
+| `recall.snoozed`   | recall snooze transaction commits                    |
+| `recall.cancelled` | recall cancellation transaction commits              |
 
 ## Events consumed
 
@@ -120,6 +120,10 @@ monthly call list. Mobile-first layout via `useBreakpoint`.
   that already has an `active` row updates the existing row instead
   of inserting. The endpoint returns 201 either way; `recall.created`
   is published only when a new row was actually inserted.
+- **Recall lifecycle events are post-commit.** Router and Copilot-tool
+  mutations use `RecallService.commit_and_publish_*`. Appointment-completion
+  subscribers batch their recall updates into one commit and publish only
+  afterward. A failed commit must never emit `recall.*` lifecycle events.
 - **Patient exclusions.** Active call list excludes
   `Patient.status="archived"` AND `Patient.do_not_contact=True`.
   Affected recalls go to the `needs_review` bucket (separate filter,

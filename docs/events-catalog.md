@@ -692,21 +692,21 @@ Maintained by `backend/scripts/generate_catalogs.py`.
 
 - **Constant:** `EventType.RECALL_CANCELLED`
 - **Publishers:**
-  - `recalls` — `backend/app/modules/recalls/service.py:376`
+  - `recalls` — `backend/app/modules/recalls/service.py:404`
 - **Subscribers:** —
 
 ### `recall.completed`
 
 - **Constant:** `EventType.RECALL_COMPLETED`
 - **Publishers:**
-  - `recalls` — `backend/app/modules/recalls/service.py:393`
+  - `recalls` — `backend/app/modules/recalls/service.py:440`
 - **Subscribers:** —
 
 ### `recall.created`
 
 - **Constant:** `EventType.RECALL_CREATED`
 - **Publishers:**
-  - `recalls` — `backend/app/modules/recalls/service.py:298`
+  - `recalls` — `backend/app/modules/recalls/service.py:311`
 - **Subscribers:** —
 
 ### `recall.due`
@@ -719,7 +719,7 @@ Maintained by `backend/scripts/generate_catalogs.py`.
 
 - **Constant:** `EventType.RECALL_SNOOZED`
 - **Publishers:**
-  - `recalls` — `backend/app/modules/recalls/service.py:356`
+  - `recalls` — `backend/app/modules/recalls/service.py:378`
 - **Subscribers:** —
 
 ### `tenant.resolved`
