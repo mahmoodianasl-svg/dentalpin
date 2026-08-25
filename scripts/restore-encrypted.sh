@@ -193,6 +193,8 @@ if [[ "$verify_only" == true ]]; then
     exit 0
 fi
 
+# The database environment and positional argument expand inside the container.
+# shellcheck disable=SC2016
 existing="$({
     printf "SELECT 1 FROM pg_database WHERE datname = :'target';\n"
 } | "${compose[@]}" exec -T db sh -ceu \
@@ -209,10 +211,14 @@ else
 fi
 
 echo "Creating clean target database: $target_database"
+# The database environment and positional argument expand inside the container.
+# shellcheck disable=SC2016
 "${compose[@]}" exec -T db sh -ceu \
     'exec createdb -U "${POSTGRES_USER:-dental}" "$1"' sh "$target_database"
 
 echo "Restoring PostgreSQL dump..."
+# The database environment and positional argument expand inside the container.
+# shellcheck disable=SC2016
 "${compose[@]}" exec -T db sh -ceu \
     'exec pg_restore -U "${POSTGRES_USER:-dental}" -d "$1" --exit-on-error --no-owner --no-privileges' \
     sh "$target_database" < "$payload_dir/database.dump"

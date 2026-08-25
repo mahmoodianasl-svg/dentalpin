@@ -149,6 +149,8 @@ cleanup() {
 trap cleanup EXIT
 
 db_name="$(
+    # The variables intentionally expand inside the db container.
+    # shellcheck disable=SC2016
     "${compose[@]}" exec -T db sh -ceu \
         'printf "%s" "${POSTGRES_DB:-dental_clinic}"' | tr -d '\r'
 )"
@@ -157,6 +159,8 @@ db_name="$(
     || die "invalid POSTGRES_DB value returned by the db service"
 
 echo "Creating PostgreSQL dump..."
+# The variables intentionally expand inside the db container.
+# shellcheck disable=SC2016
 "${compose[@]}" exec -T db sh -ceu \
     'exec pg_dump -U "${POSTGRES_USER:-dental}" -d "${POSTGRES_DB:-dental_clinic}" --format=custom --no-owner --no-privileges' \
     > "$payload_dir/database.dump"
@@ -167,6 +171,8 @@ if [[ -n "$storage_dir" ]]; then
     tar -C "$storage_dir" -cf "$payload_dir/media.tar" .
     media_source="host-directory"
 else
+    # The positional argument intentionally expands inside the one-off container.
+    # shellcheck disable=SC2016
     "${compose[@]}" run --rm --no-deps -T --entrypoint sh "$storage_service" -ceu \
         'test -d "$1"; exec tar -C "$1" -cf - .' sh "$storage_path" \
         > "$payload_dir/media.tar"
