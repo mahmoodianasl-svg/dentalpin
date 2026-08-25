@@ -1,0 +1,147 @@
+name: Wave 0 Recovery Drill
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wave0-recovery-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  encrypted-backup-clean-restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      POSTGRES_DB: dental_recovery_source
+      POSTGRES_USER: dental
+      POSTGRES_PASSWORD: recovery-ci-password
+      DATABASE_URL: postgresql+asyncpg://dental:recovery-ci-password@localhost:5432/dental_recovery_source
+      SECRET_KEY: recovery-ci-secret-key
+      ENVIRONMENT: test
+      TESTING: "true"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install recovery tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends age shellcheck
+          age --version
+          shellcheck --version
+
+      - name: Validate recovery scripts
+        run: |
+          bash -n scripts/backup-encrypted.sh scripts/restore-encrypted.sh
+          shellcheck scripts/backup-encrypted.sh scripts/restore-encrypted.sh
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11.15"
+
+      - name: Install locked backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --require-hashes -r requirements-dev.lock
+          python -m pip install --no-deps -e .
+
+      - name: Start clean PostgreSQL source
+        run: |
+          docker compose -f docker-compose.yml up -d db
+          for attempt in {1..30}; do
+            if docker compose -f docker-compose.yml exec -T db \
+              pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f docker-compose.yml logs db
+          exit 1
+
+      - name: Migrate and seed recovery probes
+        run: |
+          (cd backend && alembic upgrade heads)
+          docker compose -f docker-compose.yml exec -T db \
+            psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE TABLE recovery_probe (
+              id integer PRIMARY KEY,
+              payload text NOT NULL
+          );
+          INSERT INTO recovery_probe (id, payload)
+          VALUES (1, 'database-round-trip-ok');
+          SQL
+          mkdir -p "$RUNNER_TEMP/recovery-source-media"
+          printf '%s\n' 'media-round-trip-ok' \
+            > "$RUNNER_TEMP/recovery-source-media/probe.txt"
+
+      - name: Create encrypted database and media backup
+        run: |
+          age-keygen -o "$RUNNER_TEMP/recovery-identity.txt"
+          recipient="$(age-keygen -y "$RUNNER_TEMP/recovery-identity.txt")"
+          scripts/backup-encrypted.sh \
+            --recipient "$recipient" \
+            --compose-file docker-compose.yml \
+            --storage-dir "$RUNNER_TEMP/recovery-source-media" \
+            --output "$RUNNER_TEMP/dentalpin-recovery.tar.age"
+          test -s "$RUNNER_TEMP/dentalpin-recovery.tar.age"
+          if grep -a -q 'database-round-trip-ok\|media-round-trip-ok' \
+            "$RUNNER_TEMP/dentalpin-recovery.tar.age"; then
+            echo "::error::plaintext probe leaked into encrypted archive"
+            exit 1
+          fi
+
+      - name: Verify and restore into clean targets
+        run: |
+          scripts/restore-encrypted.sh \
+            --archive "$RUNNER_TEMP/dentalpin-recovery.tar.age" \
+            --identity "$RUNNER_TEMP/recovery-identity.txt" \
+            --compose-file docker-compose.yml \
+            --verify-only
+          scripts/restore-encrypted.sh \
+            --archive "$RUNNER_TEMP/dentalpin-recovery.tar.age" \
+            --identity "$RUNNER_TEMP/recovery-identity.txt" \
+            --compose-file docker-compose.yml \
+            --target-database dental_recovery_restored \
+            --storage-dir "$RUNNER_TEMP/recovery-restored-media"
+
+      - name: Compare source and restored state
+        run: |
+          restored_probe="$(docker compose -f docker-compose.yml exec -T db \
+            psql -U "$POSTGRES_USER" -d dental_recovery_restored -Atc \
+            'SELECT payload FROM recovery_probe WHERE id = 1' | tr -d '\r')"
+          test "$restored_probe" = "database-round-trip-ok"
+
+          source_heads="$(docker compose -f docker-compose.yml exec -T db \
+            psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc \
+            'SELECT version_num FROM alembic_version ORDER BY version_num' | tr -d '\r')"
+          restored_heads="$(docker compose -f docker-compose.yml exec -T db \
+            psql -U "$POSTGRES_USER" -d dental_recovery_restored -Atc \
+            'SELECT version_num FROM alembic_version ORDER BY version_num' | tr -d '\r')"
+          test -n "$source_heads"
+          test "$source_heads" = "$restored_heads"
+          cmp \
+            "$RUNNER_TEMP/recovery-source-media/probe.txt" \
+            "$RUNNER_TEMP/recovery-restored-media/probe.txt"
+
+      - name: Prove overwrite guards
+        run: |
+          if scripts/restore-encrypted.sh \
+            --archive "$RUNNER_TEMP/dentalpin-recovery.tar.age" \
+            --identity "$RUNNER_TEMP/recovery-identity.txt" \
+            --compose-file docker-compose.yml \
+            --target-database dental_recovery_restored \
+            --storage-dir "$RUNNER_TEMP/recovery-restored-media"; then
+            echo "::error::restore unexpectedly overwrote existing targets"
+            exit 1
+          fi
+
+      - name: Tear down recovery database
+        if: always()
+        run: docker compose -f docker-compose.yml down --volumes --remove-orphans

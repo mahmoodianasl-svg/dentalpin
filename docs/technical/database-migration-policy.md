@@ -41,7 +41,9 @@ DentalPin does not perform an in-place Alembic downgrade across a reviewed one-w
 4. if database rollback is required, restore the verified pre-deployment backup instead of executing a destructive/ambiguous downgrade;
 5. verify the restored database's Alembic head set and structural schema before application traffic is resumed.
 
-W0.2 CI exercises this policy using PostgreSQL 15: it migrates a fresh database to all heads, creates a custom-format `pg_dump`, restores it into a separate database with `pg_restore --exit-on-error`, compares the source/restored Alembic head sets, and reruns structural schema parity against the restored database.
+W0.2 CI exercises the schema portion of this policy using PostgreSQL 15: it migrates a fresh database to all heads, creates a custom-format `pg_dump`, restores it into a separate database with `pg_restore --exit-on-error`, compares the source/restored Alembic head sets, and reruns structural schema parity against the restored database.
+
+The Wave 0 recovery drill adds the operational boundary required for production: the database dump and media snapshot are checksummed, bundled, encrypted to an offline-controlled `age` recipient, and restored only into clean targets. See the [encrypted backup and clean-restore runbook](../workflows/encrypted-backup-restore.md).
 
 ## Structural parity gate
 
