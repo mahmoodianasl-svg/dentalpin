@@ -229,6 +229,10 @@ npm run dev
 ./scripts/setup-demo.sh
 ```
 
+Production recovery uses encrypted PostgreSQL + media archives and a
+clean-target restore drill. See the
+[encrypted backup and restore runbook](docs/workflows/encrypted-backup-restore.md).
+
 ### Running tests
 
 ```bash
