@@ -23,8 +23,9 @@ class EventType:
     APPOINTMENT_COMPLETED = "appointment.completed"
     APPOINTMENT_CANCELLED = "appointment.cancelled"
     APPOINTMENT_NO_SHOW = "appointment.no_show"
-    # Generic status transition event — always published by
-    # ``AppointmentService.transition`` alongside the specific ones above.
+    # Generic status transition event — published after commit by
+    # ``AppointmentService.commit_and_publish_transition`` alongside the
+    # specific ones above.
     # Payload carries from_status / to_status / changed_at / changed_by so
     # subscribers can subscribe once and react to any transition without
     # knowing the state machine.

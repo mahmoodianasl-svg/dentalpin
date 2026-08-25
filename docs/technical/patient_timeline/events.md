@@ -19,12 +19,12 @@ _This module does not publish any events._
 | Event | Handler | Effect |
 |-------|---------|--------|
 | `agenda.visit_note_updated` | _Handler module path._ | _What it does in response._ |
-| `appointment.cancelled` | _Handler module path._ | _What it does in response._ |
-| `appointment.checked_in` | _Handler module path._ | _What it does in response._ |
-| `appointment.completed` | _Handler module path._ | _What it does in response._ |
-| `appointment.confirmed` | _Handler module path._ | _What it does in response._ |
-| `appointment.in_treatment` | _Handler module path._ | _What it does in response._ |
-| `appointment.no_show` | _Handler module path._ | _What it does in response._ |
+| `appointment.cancelled` | `events.on_appointment_cancelled` | Append a cancellation entry after the transition commits. |
+| `appointment.checked_in` | `events.on_appointment_checked_in` | Append a check-in entry after the transition commits. |
+| `appointment.completed` | `events.on_appointment_completed` | Append a completion entry after the transition commits. |
+| `appointment.confirmed` | `events.on_appointment_confirmed` | Append a confirmation entry after the transition commits. |
+| `appointment.in_treatment` | `events.on_appointment_in_treatment` | Append an in-treatment entry after the transition commits. |
+| `appointment.no_show` | `events.on_appointment_no_show` | Append a no-show entry after the transition commits. |
 | `appointment.scheduled` | _Handler module path._ | _What it does in response._ |
 | `budget.accepted` | _Handler module path._ | _What it does in response._ |
 | `budget.expired` | _Handler module path._ | _What it does in response._ |
@@ -52,6 +52,10 @@ _This module does not publish any events._
 | `treatment_plan.item_completed_without_note` | _Handler module path._ | _What it does in response._ |
 | `treatment_plan.reactivated` | _Handler module path._ | _What it does in response._ |
 | `treatment_plan.treatment_completed` | _Handler module path._ | _What it does in response._ |
+
+Appointment lifecycle handlers write append-only rows and commit in independent
+sessions. Agenda owns the boundary and publishes each status event only after
+the appointment transition commit succeeds.
 
 ## Adding a new event
 

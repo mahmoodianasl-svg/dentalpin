@@ -201,13 +201,22 @@ async def update_appointment(
                 detail="Invalid professional: must be a dentist or hygienist in this clinic",
             )
 
+    updates = data.model_dump(exclude_unset=True)
+    from_status = appointment.status
     try:
         appointment = await AppointmentService.update_appointment(
             db,
             appointment,
-            data.model_dump(exclude_unset=True),
+            updates,
             changed_by=ctx.user_id,
         )
+        if appointment.status != from_status:
+            await AppointmentService.commit_and_publish_transition(
+                db,
+                appointment,
+                from_status=from_status,
+                changed_by=ctx.user_id,
+            )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -236,8 +245,16 @@ async def delete_appointment(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Appointment not found",
         )
+    from_status = appointment.status
     try:
         await AppointmentService.cancel_appointment(db, appointment, changed_by=ctx.user_id)
+        if appointment.status != from_status:
+            await AppointmentService.commit_and_publish_transition(
+                db,
+                appointment,
+                from_status=from_status,
+                changed_by=ctx.user_id,
+            )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -267,9 +284,17 @@ async def transition_appointment(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Appointment not found",
         )
+    from_status = appointment.status
     try:
         await AppointmentService.transition(
             db, appointment, data.to_status, changed_by=ctx.user_id, note=data.note
+        )
+        await AppointmentService.commit_and_publish_transition(
+            db,
+            appointment,
+            from_status=from_status,
+            changed_by=ctx.user_id,
+            note=data.note,
         )
     except AlreadyInStateError as e:
         raise HTTPException(

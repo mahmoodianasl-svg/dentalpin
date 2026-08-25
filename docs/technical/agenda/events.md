@@ -12,7 +12,7 @@ Per-module slice of [`docs/events-catalog.md`](../../events-catalog.md)
 
 Appointment lifecycle. The specific `appointment.<status>` event is
 dispatched from a status→`EventType` map in
-`AppointmentService.transition_status` (`service.py`), so the publish
+`AppointmentService.commit_and_publish_transition` (`service.py`), so the publish
 call passes a variable — the catalog resolves it from the constants
 referenced in that file.
 
@@ -20,13 +20,13 @@ referenced in that file.
 |-------|------|-----------|
 | `appointment.scheduled` | Appointment transaction committed (or import batch committed) | notifications, patient_timeline, recalls, schedules |
 | `appointment.updated` | Appointment fields edited | schedules |
-| `appointment.status_changed` | Any status transition (generic) | — |
-| `appointment.confirmed` | → confirmed | patient_timeline |
-| `appointment.checked_in` | → checked-in | patient_timeline |
-| `appointment.in_treatment` | → in-treatment | patient_timeline |
-| `appointment.completed` | → completed | patient_timeline, recalls, treatment_plan |
-| `appointment.cancelled` | → cancelled | copilot, notifications, patient_timeline, recalls, schedules |
-| `appointment.no_show` | → no-show | patient_timeline |
+| `appointment.status_changed` | Status transition committed (generic) | — |
+| `appointment.confirmed` | Committed → confirmed | patient_timeline |
+| `appointment.checked_in` | Committed → checked-in | patient_timeline |
+| `appointment.in_treatment` | Committed → in-treatment | patient_timeline |
+| `appointment.completed` | Committed → completed | patient_timeline, recalls, treatment_plan |
+| `appointment.cancelled` | Committed → cancelled | copilot, notifications, patient_timeline, recalls, schedules |
+| `appointment.no_show` | Committed → no-show | patient_timeline |
 | `appointment.cabinet_changed` | Cabinet reassigned | — |
 | `agenda.visit_note_updated` | Visit note / completion flag edited on an appointment-treatment | patient_timeline |
 
@@ -37,6 +37,11 @@ Payloads carry `clinic_id`, `appointment_id`, and (where relevant)
 `AppointmentService.create_appointment` is persistence-only. Live callers
 commit and publish through `commit_and_publish_scheduled`; migration imports
 queue the same payload and release it after the containing batch commit.
+
+`AppointmentService.transition` is also persistence-only. Live HTTP and agent
+callers use `commit_and_publish_transition`, which commits before publishing
+the canonical payload first as `appointment.status_changed` and then as the
+status-specific event. A failed commit publishes neither event.
 
 ## Subscribed
 

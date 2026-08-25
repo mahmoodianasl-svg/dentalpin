@@ -23,8 +23,8 @@ Per-module slice of [`docs/events-catalog.md`](../../events-catalog.md)
 
 | Event | Handler | Effect |
 |-------|---------|--------|
-| `appointment.cancelled` | `events.on_appointment_cancelled` | Unlink active recalls and revert `contacted_scheduled` to `pending` |
-| `appointment.completed` | `events.on_appointment_completed` | Mark the recall linked to that appointment `done` |
+| `appointment.cancelled` | `events.on_appointment_cancelled` | After the transition commits, unlink active recalls and revert `contacted_scheduled` to `pending` |
+| `appointment.completed` | `events.on_appointment_completed` | After the transition commits, mark the recall linked to that appointment `done` |
 | `appointment.scheduled` | `events.on_appointment_scheduled` | In a fresh DB session, auto-link one unambiguous due recall after the appointment has committed |
 | `patient.archived` | `events.on_patient_archived` | Move active recalls to `needs_review` |
 | `treatment_plan.treatment_completed` | `events.on_treatment_plan_completed` | Logging-only hook; suggestions remain pull-based |
@@ -34,6 +34,10 @@ opens an independent session and persists an FK back to the appointment.
 The same boundary applies to `patient.archived`: its handler commits recall
 updates independently, so it must not run for an archive that can still roll
 back.
+
+The completion and cancellation handlers also commit recall changes in fresh
+sessions. Agenda therefore publishes both terminal events only after the
+appointment status transaction commits.
 
 ## Adding a new event
 

@@ -130,6 +130,9 @@ Clinical-note created events (`clinical_notes.{administrative,diagnosis,treatmen
 - **Item completion has two paths**: the user marks an item complete
   here, or the odontogram fires `odontogram.treatment.performed`. Both
   must converge to the same state — keep them idempotent.
+- **`appointment.completed` describes committed state.** Its handler opens an
+  independent session and commits planned-item changes, so agenda must not
+  dispatch it before the appointment transition commits.
 - **Sessions are the source of earned signal.** Every plan item now
   owns ≥1 `PlannedTreatmentItemSession` (backfilled by `tp_0006`).
   Per-session completion fires `item_session_completed`; the item

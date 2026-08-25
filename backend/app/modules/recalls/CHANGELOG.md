@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- fix(events): receive appointment completion/cancellation only after the
+  transition commits, so independently committed recall updates cannot outlive
+  a rolled-back appointment status change.
+
 - fix(events): receive `patient.archived` only after the patient commit, so
   the independently committed `needs_review` cascade cannot survive a rolled-
   back patient archive.

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- fix(events): create cancellation nudges only after the appointment
+  transition commits, preventing a durable nudge for a rolled-back
+  cancellation.
+
 - i18n: add Tamil locale (`ta.json`) with full UI coverage.
 
 - style(lint): first ESLint pass over this module's frontend layer —

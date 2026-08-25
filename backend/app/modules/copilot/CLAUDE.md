@@ -107,6 +107,9 @@ Subscription only — copilot never imports the publisher (ADR 0003), so
   rows are filtered out (no purge needed). `required_permission` gates
   visibility per viewer. Acting on a nudge sends its prompt as a chat
   turn and dismisses it.
+- **Cancellation events describe committed appointments.** The nudge handler
+  commits in its own session, so agenda publishes `appointment.cancelled`
+  only after the appointment transition commits.
 - **Usage metrics read `agent_audit_logs`.** `GET /metrics`
   (`CopilotMetricsService`) joins audit logs to copilot agents
   (`agents.type == "copilot"`); there's no copilot-owned metrics table.

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- fix(events): receive `appointment.cancelled` only after the appointment
+  transition commits, so notification work is not queued for a rolled-back
+  cancellation.
+
 - fix(events): receive `patient.created` only after the patient commit, so the
   welcome-email task's independent session can reliably load the new patient
   instead of silently dropping the notification.

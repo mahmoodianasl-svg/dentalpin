@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- fix(events): make appointment status transitions persistence-only and publish
+  `appointment.status_changed` plus the specific lifecycle event only after
+  the transition commits. Independent treatment-plan, recall, copilot,
+  notification, and timeline subscribers can no longer persist side effects
+  for a transition that later rolls back.
+
 - fix(events): publish `appointment.scheduled` only after the appointment
   transaction commits. Recalls consumes the event in an independent session
   and writes an FK back to the appointment; the previous pre-commit dispatch

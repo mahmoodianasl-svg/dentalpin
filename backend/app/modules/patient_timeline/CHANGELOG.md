@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- fix(events): record appointment lifecycle entries only after each status
+  transition commits, preventing append-only timeline rows for rolled-back
+  transitions.
+
 - i18n: add `pt` fallback to treatment name resolution in the demo
   timeline seed.
 
