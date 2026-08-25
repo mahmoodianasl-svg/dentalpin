@@ -233,7 +233,13 @@ class NoteService:
         body: str,
         tooth_number: int | None = None,
         attachment_document_ids: Iterable[UUID] | None = None,
-    ) -> ClinicalNote:
+    ) -> tuple[ClinicalNote, UUID]:
+        """Create and flush a note without publishing its lifecycle event.
+
+        Live callers must follow this with
+        :meth:`commit_and_publish_created` so independently committing
+        subscribers never observe a note transaction that can still roll back.
+        """
         patient_id = await resolve_owner_patient(db, clinic_id, owner_type, owner_id)
 
         note = ClinicalNote(
@@ -259,24 +265,37 @@ class NoteService:
             )
 
         await db.flush()
+        return note, patient_id
 
-        event_name = _NOTE_TYPE_TO_EVENT[note_type]
-        await event_bus.publish(
-            event_name,
+    @staticmethod
+    def created_event(note: ClinicalNote, patient_id: UUID) -> tuple[str, dict]:
+        """Build the canonical event type and payload for a created note."""
+        return (
+            _NOTE_TYPE_TO_EVENT[note.note_type],
             {
-                "clinic_id": str(clinic_id),
+                "clinic_id": str(note.clinic_id),
                 "patient_id": str(patient_id),
                 "note_id": str(note.id),
-                "note_type": note_type,
-                "owner_type": owner_type,
-                "owner_id": str(owner_id),
+                "note_type": note.note_type,
+                "owner_type": note.owner_type,
+                "owner_id": str(note.owner_id),
                 "tooth_number": note.tooth_number,
-                "user_id": str(user_id),
-                "body_excerpt": body_excerpt(body),
+                "user_id": str(note.author_id),
+                "body_excerpt": body_excerpt(note.body),
                 "occurred_at": note.created_at.isoformat() if note.created_at else None,
             },
         )
-        return note
+
+    @staticmethod
+    async def commit_and_publish_created(
+        db: AsyncSession,
+        note: ClinicalNote,
+        patient_id: UUID,
+    ) -> None:
+        """Commit a new note before publishing its lifecycle event."""
+        event_name, payload = NoteService.created_event(note, patient_id)
+        await db.commit()
+        await event_bus.publish(event_name, payload)
 
     @staticmethod
     async def update(

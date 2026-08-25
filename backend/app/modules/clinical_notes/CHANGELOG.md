@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- fix(events): commit a new clinical note and its attachment links before
+  publishing any of the six ``clinical_notes.*_created`` lifecycle events.
+  A failed producer commit now suppresses publication, preventing the
+  independently committing ``patient_timeline`` subscriber from persisting
+  orphan history.
+
 - i18n: add Tamil locale (`ta.json`); add Tamil translations to seed
   data; add `body_i18n_key` to template responses so template bodies
   resolve in the active locale. Labels now resolve via
