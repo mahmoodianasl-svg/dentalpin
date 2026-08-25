@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- fix(events): queue ``odontogram.treatment.performed`` on the owning
+  transaction and publish it only after commit. Direct odontogram completion
+  and nested treatment-plan finalization now share the same boundary, so the
+  five subscribers cannot persist payments, timeline entries, or plan
+  projections for a treatment that later rolls back.
+
 - feat(events): `TreatmentService.perform` accepts `publish_price=False`
   to emit `odontogram.treatment.performed` with `unit_price: null` —
   the caller declares the revenue already attributed elsewhere

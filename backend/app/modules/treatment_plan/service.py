@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.auth.models import ClinicMembership
-from app.core.events import event_bus
+from app.core.events import event_bus, queue_after_commit
 from app.core.events.types import EventType
 from app.modules.odontogram.models import Treatment
 from app.modules.patients.models import Patient
@@ -857,11 +857,12 @@ class TreatmentPlanService:
     ) -> PlannedTreatmentItem | None:
         """Mark one session of a plan item as completed.
 
-        Publishes ``treatment_plan.item_session_completed`` (consumed by
-        payments → earned ledger). When this is the last non-pending
-        session, the parent item is finalized: status flips to
-        ``completed``, the Treatment is performed, and the existing
-        ``treatment_plan.treatment_completed`` audit/recall path runs.
+        Queues ``treatment_plan.item_session_completed`` (consumed by
+        payments → earned ledger) for publication after the outer commit.
+        When this is the last non-pending session, the parent item is
+        finalized: status flips to ``completed``, the Treatment is performed,
+        and the existing ``treatment_plan.treatment_completed`` audit/recall
+        path is queued in the same transaction.
         """
         item = await TreatmentPlanService._load_item_with_sessions(db, clinic_id, plan_id, item_id)
         if not item:
@@ -885,7 +886,8 @@ class TreatmentPlanService:
         if item.treatment:
             patient_id_str = str(item.treatment.patient_id)
 
-        await event_bus.publish(
+        queue_after_commit(
+            db,
             EventType.TREATMENT_PLAN_ITEM_SESSION_COMPLETED,
             {
                 "clinic_id": str(clinic_id),
@@ -934,9 +936,10 @@ class TreatmentPlanService:
     ) -> None:
         """Flip the item to completed and run the legacy completion path.
 
-        Performs the Treatment, publishes ``treatment_completed`` (recalls /
-        odontogram) and the audit hint. Does NOT publish earned events —
-        those flow per-session via ``item_session_completed``.
+        Performs the Treatment and queues ``treatment_completed`` (recalls /
+        odontogram) plus the audit hint. Does NOT add another earned event —
+        those flow per-session via ``item_session_completed``. The router
+        commits once, then publishes the complete queue in order.
         """
         item.status = "completed"
         item.completed_at = datetime.now(UTC)
@@ -976,7 +979,8 @@ class TreatmentPlanService:
                 if item.treatment.catalog_item.category:
                     treatment_category_key = item.treatment.catalog_item.category.key
 
-        await event_bus.publish(
+        queue_after_commit(
+            db,
             "treatment_plan.treatment_completed",
             {
                 "plan_id": str(plan_id),
@@ -991,7 +995,8 @@ class TreatmentPlanService:
             },
         )
 
-        await event_bus.publish(
+        queue_after_commit(
+            db,
             EventType.TREATMENT_PLAN_ITEM_COMPLETED_WITHOUT_NOTE,
             {
                 "clinic_id": str(clinic_id),
@@ -1190,7 +1195,8 @@ class TreatmentPlanService:
         old_status = plan.status
         plan.status = "completed"
 
-        await event_bus.publish(
+        queue_after_commit(
+            db,
             "treatment_plan.status_changed",
             {
                 "plan_id": str(plan.id),

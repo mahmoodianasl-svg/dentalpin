@@ -2,10 +2,10 @@
 
 The catalog generator used to only resolve `event_bus.publish(EventType.X)`
 and string literals, so events published via a module-local enum
-(`OdontogramEventType`) or a dispatch variable (agenda status map,
-clinical_notes note-type map, notifications gateway) were reported as
-having *no publisher* — inviting someone to delete a live event. These
-tests lock in that each of those four mechanisms is now attributed.
+(`OdontogramEventType`), a dispatch variable (agenda status map,
+clinical_notes note-type map, notifications gateway), or the transactional
+`queue_after_commit` helper were reported as having *no publisher* — inviting
+someone to delete a live event. These tests lock in every mechanism.
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ def test_dynamic_and_enum_publishers_are_attributed() -> None:
         "odontogram.surface.updated": "odontogram",  # module-local enum
         "clinical_notes.diagnosis_created": "clinical_notes",  # note-type map
         "notification.sent": "notifications",  # gateway helper dispatch
+        "odontogram.treatment.performed": "odontogram",  # after-commit queue
     }
     for event, module in expectations.items():
         sites = publishers.get(event)

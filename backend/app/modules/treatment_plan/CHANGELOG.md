@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- fix(events): commit treatment-completion state before publishing its fan-out.
+  Session-earned, odontogram-performed, treatment-completed, missing-note, and
+  auto-completed-plan events are now queued on the outer transaction and
+  released in order after one successful commit. Appointment- and
+  odontogram-driven handlers likewise commit their planned-item changes before
+  emitting downstream completion events.
+
 - fix(events): consume `appointment.completed` only after the appointment
   transition commits, preventing performed-item updates from surviving a
   rolled-back completion.
@@ -91,15 +98,11 @@
   The legacy ``PATCH /items/{id}/complete`` keeps working: it advances the
   next pending session. Migration ``tp_0006`` creates the new table and
   backfills one row per existing item.
-- fix(events): ``on_treatment_performed`` handler uses
-  ``SELECT FOR UPDATE SKIP LOCKED`` when looking up the matching
-  planned item. Avoids a deadlock that surfaced as a client timeout
-  on ``PATCH /treatment-plans/{id}/items/{id}/complete``: under the
-  async-first event bus (sprint 3) the parent transaction held the
-  row lock on ``planned_treatment_items`` and the handler — running
-  inline before the parent commit, in a new session — blocked
-  trying to update the same row. When the row is locked we skip
-  silently; the originator's UPDATE drives the state transition.
+- fix(events): ``on_treatment_performed`` locks the matching planned item
+  only after the producer transaction commits. The earlier
+  ``SELECT FOR UPDATE SKIP LOCKED`` self-deadlock workaround is no longer
+  needed; a normal row lock now serializes duplicate deliveries without
+  silently skipping an independently initiated odontogram completion.
 - feat(plans): per-item assigned professional. `PlannedTreatmentItem` gains
   `assigned_professional_id` (FK to `users.id`, nullable). New items inherit
   the plan's doctor by default; the API and `PlanItemDoctorChip` lets the

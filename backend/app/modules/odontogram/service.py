@@ -8,7 +8,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.events import event_bus
+from app.core.events import event_bus, queue_after_commit
 from app.core.events.types import EventType
 from app.modules.catalog.models import TreatmentCatalogItem, TreatmentOdontogramMapping
 from app.modules.catalog.pricing import (
@@ -813,6 +813,13 @@ class TreatmentService:
         notes: str | None = None,
         publish_price: bool = True,
     ) -> Treatment | None:
+        """Mark a treatment performed and queue its event for the outer commit.
+
+        Callers that own the transaction must finish with
+        ``commit_and_publish_queued_events``. This keeps independently
+        committing subscribers from observing a treatment that can still roll
+        back while allowing treatment-plan finalization to remain atomic.
+        """
         treatment = await TreatmentService.get_treatment(db, clinic_id, treatment_id)
         if not treatment:
             return None
@@ -825,7 +832,8 @@ class TreatmentService:
             treatment.notes = notes
         await db.flush()
 
-        await event_bus.publish(
+        queue_after_commit(
+            db,
             EventType.ODONTOGRAM_TREATMENT_PERFORMED,
             {
                 "clinic_id": str(clinic_id),

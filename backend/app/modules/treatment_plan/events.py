@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.events import event_bus
+from app.core.events import commit_and_publish_queued_events, queue_after_commit
 from app.database import async_session_maker
 
 from .models import PlannedTreatmentItem, PlannedTreatmentItemSession
@@ -84,7 +84,8 @@ async def on_appointment_completed(data: dict[str, Any]) -> None:
                         item.completed_without_appointment = False
 
                         category_key = await _resolve_treatment_category_key(db, item.treatment_id)
-                        await event_bus.publish(
+                        queue_after_commit(
+                            db,
                             "treatment_plan.treatment_completed",
                             {
                                 "plan_id": str(item.treatment_plan_id),
@@ -104,7 +105,7 @@ async def on_appointment_completed(data: dict[str, Any]) -> None:
                             db, UUID(clinic_id), item.treatment_plan_id
                         )
 
-            await db.commit()
+            await commit_and_publish_queued_events(db)
             logger.info(
                 f"Processed appointment completion for {len(completed_treatments)} treatments"
             )
@@ -263,17 +264,10 @@ async def on_treatment_performed(data: dict[str, Any]) -> None:
 
     async with async_session_maker() as db:
         try:
-            # ``SKIP LOCKED`` avoids a deadlock when this handler runs as a
-            # sub-step of ``TreatmentPlanService.complete_item``: the parent
-            # transaction already holds a row lock on this item (it flushed
-            # its own ``status='completed'`` UPDATE before publishing the
-            # event). Without ``SKIP LOCKED`` the handler would open a new
-            # session, block waiting for the parent to commit, and the
-            # parent would block waiting for this handler to return —
-            # surfaced as a request timeout in the client. When the lock is
-            # held we treat the originator as responsible for the
-            # state transition and exit silently; the parent's UPDATE
-            # achieves the same end state.
+            # The producer publishes only after its treatment transaction
+            # commits, so this handler can take a normal row lock without the
+            # former self-deadlock. The lock serializes duplicate deliveries;
+            # the ``status == 'pending'`` predicate keeps the update idempotent.
             result = await db.execute(
                 select(PlannedTreatmentItem)
                 .where(
@@ -281,7 +275,7 @@ async def on_treatment_performed(data: dict[str, Any]) -> None:
                     PlannedTreatmentItem.clinic_id == UUID(clinic_id),
                     PlannedTreatmentItem.status == "pending",
                 )
-                .with_for_update(skip_locked=True)
+                .with_for_update()
             )
             item = result.scalar_one_or_none()
 
@@ -303,7 +297,8 @@ async def on_treatment_performed(data: dict[str, Any]) -> None:
                 )
 
                 category_key = await _resolve_treatment_category_key(db, item.treatment_id)
-                await event_bus.publish(
+                queue_after_commit(
+                    db,
                     "treatment_plan.treatment_completed",
                     {
                         "plan_id": str(item.treatment_plan_id),
@@ -322,7 +317,7 @@ async def on_treatment_performed(data: dict[str, Any]) -> None:
                     db, UUID(clinic_id), item.treatment_plan_id
                 )
 
-                await db.commit()
+                await commit_and_publish_queued_events(db)
                 logger.info("Marked planned item %s as completed from odontogram", item.id)
 
         except Exception as e:

@@ -19,8 +19,8 @@ Per-module slice of [`docs/events-catalog.md`](../../events-catalog.md)
 | `treatment_plan.reactivated` | closed → draft | Subscriber: `patient_timeline`. |
 | `treatment_plan.treatment_added` | A `PlannedTreatmentItem` is added to a plan via `POST /treatment-plans/{id}/items`. | `plan_id`, `item_id`, `treatment_id`, `clinic_id`, `patient_id`, `budget_id` (nullable), `catalog_item_id` (nullable), `tooth_number` (nullable), `surfaces` (nullable), `unit_price` (nullable, decimal-as-string), `assigned_professional_id` (nullable, snapshot of the doctor responsible for this line). |
 | `treatment_plan.treatment_removed` | Item removed | Includes `budget_id`. Subscriber: `budget`. |
-| `treatment_plan.treatment_completed` | Item finalized (all sessions terminal, ≥1 completed) | Audit/recall path only — carries **no price**; earned-ledger generation moved to `item_session_completed` with the multi-session feature. Subscribers: `patient_timeline`, `recalls`. |
-| `treatment_plan.item_session_completed` | One session of a plan item marked done (single-session items publish it once on completion) | `plan_id`, `item_id`, `session_id`, `sequence`, `label`, `amount`, `treatment_id`, `patient_id`, `completed_by`, `occurred_at`. Consumed by `payments` (earned row, idempotent on `(treatment_id, session_id)`). |
+| `treatment_plan.treatment_completed` | After the containing completion transaction commits (all sessions terminal, ≥1 completed) | Audit/recall path only — carries **no price**; earned-ledger generation moved to `item_session_completed` with the multi-session feature. Subscribers: `patient_timeline`, `recalls`. |
+| `treatment_plan.item_session_completed` | After one completed session commits (single-session items publish it once on completion) | `plan_id`, `item_id`, `session_id`, `sequence`, `label`, `amount`, `treatment_id`, `patient_id`, `completed_by`, `occurred_at`. Consumed by `payments` (earned row, idempotent on `(treatment_id, session_id)`). |
 | `treatment_plan.budget_sync_requested` | Manual resync | Snapshot payload includes full `items[]`. Subscriber: `budget`. |
 | `treatment_plan.item_completed_without_note` | Completion check | Consumed by `patient_timeline`. |
 
@@ -28,6 +28,13 @@ Per-module slice of [`docs/events-catalog.md`](../../events-catalog.md)
 service calls `TreatmentService.perform(publish_price=False)` so the
 resulting `odontogram.treatment.performed` carries `unit_price: null`
 — the sessions already booked the money in the payments earned ledger.
+
+**One committed fan-out.** Completion queues its session-earned event first;
+finalization then queues odontogram-performed, treatment-completed,
+missing-note, and any auto-completed-plan status event. The outer route commits
+once through `commit_and_publish_queued_events` and publishes that queue in
+order. Appointment- and odontogram-driven handlers use the same helper around
+their independent sessions. Failed commits publish none of these events.
 
 ## Subscribed
 
@@ -42,7 +49,9 @@ resulting `odontogram.treatment.performed` carries `unit_price: null`
 | `odontogram.treatment.performed` | `events.py::on_treatment_performed` | Mark the matching pending item completed **and cancel its pending sessions** (no session events) — the performed event already carried the full price to payments; a later session completion would book the same money twice. |
 
 The appointment-completion boundary is producer-owned: agenda commits before
-dispatch because this handler writes and commits in an independent session.
+dispatch because this handler writes in an independent session. That handler
+then commits its own planned-item updates before publishing downstream
+completion events.
 
 ## Adding a new event
 

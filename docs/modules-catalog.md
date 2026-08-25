@@ -2,7 +2,7 @@
 
 # Modules catalog
 
-Single source of truth for every module loaded into the running DentalPin instance. Generated from module manifests, `get_permissions()`, `get_event_handlers()`, and grep of `event_bus.publish` callsites.
+Single source of truth for every module loaded into the running DentalPin instance. Generated from module manifests, `get_permissions()`, `get_event_handlers()`, and grep of event publisher callsites.
 
 Maintained by `backend/scripts/generate_catalogs.py`. CI fails if a manifest changes without re-generation.
 

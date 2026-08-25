@@ -71,8 +71,8 @@ the `clinical_notes` module since issue #60.
 | `treatment_plan.reactivated` | closed → draft | Subscriber: `patient_timeline`. |
 | `treatment_plan.treatment_added` | item added | snapshot payload (catalog_item_id, tooth, surfaces, unit_price, budget_id). Subscriber: `budget`. |
 | `treatment_plan.treatment_removed` | item removed | payload includes `budget_id`. Subscriber: `budget`. |
-| `treatment_plan.treatment_completed` | item marked done | consumed by `patient_timeline`, `recalls`. Payload includes `treatment_category_key` (snapshot, may be null) so subscribers can map a completed treatment to a follow-up policy without importing catalog or treatment_plan models (issue #62). Earned-ledger generation **moved out** of this event since the multi-session feature — see `item_session_completed` below. |
-| `treatment_plan.item_session_completed` | one session of a multi-session item marked done | payload: `{plan_id, item_id, session_id, sequence, label, amount, treatment_id, patient_id, completed_by, occurred_at}`. Consumed by `payments` (earned entry, idempotent on `(treatment_id, session_id)`). Fires for every completed session — single-session items publish it once on completion. |
+| `treatment_plan.treatment_completed` | after the containing completion transaction commits | consumed by `patient_timeline`, `recalls`. Payload includes `treatment_category_key` (snapshot, may be null) so subscribers can map a completed treatment to a follow-up policy without importing catalog or treatment_plan models (issue #62). Earned-ledger generation **moved out** of this event since the multi-session feature — see `item_session_completed` below. |
+| `treatment_plan.item_session_completed` | after the completed session commits | payload: `{plan_id, item_id, session_id, sequence, label, amount, treatment_id, patient_id, completed_by, occurred_at}`. Consumed by `payments` (earned entry, idempotent on `(treatment_id, session_id)`). Fires for every completed session — single-session items publish it once on completion. |
 | `treatment_plan.budget_sync_requested` | manual resync | snapshot payload includes full `items[]`. Subscriber: `budget`. |
 | `treatment_plan.item_completed_without_note` | completion check | consumed by `patient_timeline` |
 
@@ -130,6 +130,12 @@ Clinical-note created events (`clinical_notes.{administrative,diagnosis,treatmen
 - **Item completion has two paths**: the user marks an item complete
   here, or the odontogram fires `odontogram.treatment.performed`. Both
   must converge to the same state — keep them idempotent.
+- **Completion fan-out is post-commit and ordered.** Session completion queues
+  the earned event first, then (on finalization) odontogram-performed,
+  treatment-completed, missing-note, and plan-status events. The completion
+  routers commit once through `commit_and_publish_queued_events`; the
+  appointment/odontogram subscribers use the same helper for their independent
+  sessions. Failed commits must emit none of this fan-out.
 - **`appointment.completed` describes committed state.** Its handler opens an
   independent session and commits planned-item changes, so agenda must not
   dispatch it before the appointment transition commits.
