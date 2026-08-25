@@ -71,12 +71,12 @@ read/write notes (administrative notes are reception-friendly).
 
 | Event | When |
 |---|---|
-| `clinical_notes.administrative_created` | administrative note created |
-| `clinical_notes.diagnosis_created`      | diagnosis note created      |
-| `clinical_notes.treatment_created`      | treatment note created      |
-| `clinical_notes.plan_created`           | treatment_plan note created |
-| `clinical_notes.appointment_clinical_created`       | clinical note on an appointment |
-| `clinical_notes.appointment_administrative_created` | administrative note on an appointment |
+| `clinical_notes.administrative_created` | after the administrative note commits |
+| `clinical_notes.diagnosis_created`      | after the diagnosis note commits      |
+| `clinical_notes.treatment_created`      | after the treatment note commits      |
+| `clinical_notes.plan_created`           | after the treatment_plan note commits |
+| `clinical_notes.appointment_clinical_created`       | after the clinical appointment note commits |
+| `clinical_notes.appointment_administrative_created` | after the administrative appointment note commits |
 
 Payload is uniform: ``{ clinic_id, patient_id, note_id, note_type,
 owner_type, owner_id, tooth_number, user_id, body_excerpt, occurred_at }``.
@@ -103,6 +103,10 @@ None.
 - **No DB-level FK on owner_id.** Don't add one — it would require
   polymorphic-FK trickery and break uninstall safety. Trust the
   service-layer validators.
+- **Created events are post-commit.** ``NoteService.create`` only flushes and
+  returns ``(note, patient_id)``. Live callers must finish through
+  ``commit_and_publish_created`` so ``patient_timeline`` cannot commit a
+  projection for a producer transaction that later rolls back.
 - **Spanish UI strings live in this module's i18n locale.** Add new
   strings under ``frontend/i18n/locales/{en,es}.json`` and key them
   with ``clinicalNotes.*``.

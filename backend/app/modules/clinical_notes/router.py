@@ -161,7 +161,7 @@ async def create_note(
 ) -> ApiResponse[ClinicalNoteResponse]:
     """Create a clinical note. Owner must exist in the same clinic."""
     try:
-        note = await NoteService.create(
+        note, patient_id = await NoteService.create(
             db,
             clinic_id=ctx.clinic_id,
             user_id=ctx.user_id,
@@ -176,6 +176,7 @@ async def create_note(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except AttachmentPatientMismatchError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    await NoteService.commit_and_publish_created(db, note, patient_id)
     return ApiResponse(data=await _decorate_note(db, ctx.clinic_id, note))
 
 

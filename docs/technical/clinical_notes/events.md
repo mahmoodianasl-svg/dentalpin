@@ -16,12 +16,12 @@ attributes these from the `EventType` constants referenced in that file.
 
 | Event | When | Consumers |
 |-------|------|-----------|
-| `clinical_notes.diagnosis_created` | A diagnosis note is created | patient_timeline |
-| `clinical_notes.treatment_created` | A treatment note is created | patient_timeline |
-| `clinical_notes.plan_created` | A treatment-plan note is created | patient_timeline |
-| `clinical_notes.administrative_created` | An administrative note is created | patient_timeline |
-| `clinical_notes.appointment_clinical_created` | A clinical note captured on an appointment | — |
-| `clinical_notes.appointment_administrative_created` | An administrative note captured on an appointment | — |
+| `clinical_notes.diagnosis_created` | After a diagnosis note commits | patient_timeline |
+| `clinical_notes.treatment_created` | After a treatment note commits | patient_timeline |
+| `clinical_notes.plan_created` | After a treatment-plan note commits | patient_timeline |
+| `clinical_notes.administrative_created` | After an administrative note commits | patient_timeline |
+| `clinical_notes.appointment_clinical_created` | After a clinical appointment note commits | — |
+| `clinical_notes.appointment_administrative_created` | After an administrative appointment note commits | — |
 
 > **Known gap (audit event-bus #7):** the two `appointment_*` note
 > events have no subscriber, so notes captured on an appointment do not
@@ -29,6 +29,13 @@ attributes these from the `EventType` constants referenced in that file.
 > docs backfill.
 
 Payloads carry `clinic_id`, `patient_id`, and a `body_excerpt`.
+
+`NoteService.create` flushes the note and any attachment links but does not
+publish. Its live route completes through `commit_and_publish_created`, which
+commits the producer transaction before dispatching the event. This ordering is
+required because `patient_timeline` records projections in an independent
+session: if the producer commit fails, no lifecycle event is emitted and no
+orphan timeline row can be committed.
 
 ## Subscribed
 
