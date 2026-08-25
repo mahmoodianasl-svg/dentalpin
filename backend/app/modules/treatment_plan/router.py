@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth.dependencies import ClinicContext, get_clinic_context, require_permission
+from app.core.events import commit_and_publish_queued_events
 from app.core.schemas import ApiResponse, PaginatedApiResponse
 from app.database import get_db
 
@@ -504,6 +505,7 @@ async def complete_plan_item(
     )
     if not item:
         raise HTTPException(status_code=404, detail="Treatment item not found")
+    await commit_and_publish_queued_events(db)
     return ApiResponse(data=PlannedTreatmentItemResponse.model_validate(item))
 
 
@@ -545,7 +547,9 @@ async def complete_item_session(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _item_response_or_404(item)
+    response = _item_response_or_404(item)
+    await commit_and_publish_queued_events(db)
+    return response
 
 
 @router.patch(
@@ -568,7 +572,9 @@ async def cancel_item_session(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _item_response_or_404(item)
+    response = _item_response_or_404(item)
+    await commit_and_publish_queued_events(db)
+    return response
 
 
 @router.put(

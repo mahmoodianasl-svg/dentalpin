@@ -42,6 +42,10 @@ None.
 - **Treatments fired on `performed`** are the trigger for budget +
   treatment_plan sync. Idempotency matters — a re-fire must not
   double-charge.
+- **`treatment.performed` is queued until the outer commit.** Direct
+  odontogram requests and nested treatment-plan finalization both finish with
+  `commit_and_publish_queued_events`; never publish this event directly or
+  commit inside `TreatmentService.perform`.
 - **`unit_price: null` on `treatment.performed` is a contract**, not a
   missing field: `perform(publish_price=False)` is how treatment_plan
   finalizes a sessioned item whose amounts were already booked

@@ -4,7 +4,7 @@
 Sources:
 - Module manifests via ``discover_modules()`` (entry points + filesystem)
 - ``EventType`` constants from ``app.core.events.types``
-- ``event_bus.publish(...)`` callsites grepped from
+- ``event_bus.publish(...)`` and ``queue_after_commit(...)`` callsites grepped from
   ``backend/app/modules/`` and ``backend/app/core/`` (publishers)
 - ``get_event_handlers()`` returns from each loaded module
   (subscribers)
@@ -86,6 +86,12 @@ from app.core.plugins.loader import discover_modules  # noqa: E402
 #   "patient.created"             -> string literal
 #   specific / event_name         -> a bare identifier (dynamic dispatch)
 PUBLISH_ARG_RE = re.compile(r"event_bus\.publish\(\s*(?P<arg>[A-Za-z_][\w.]*|[\"'][\w.]+[\"'])")
+# ``queue_after_commit(db, <event>, payload)`` has the same event token in
+# its second argument. The first argument is intentionally constrained to a
+# comma-free expression; live callsites pass the session as a simple name.
+QUEUE_ARG_RE = re.compile(
+    r"queue_after_commit\(\s*[^,]+,\s*(?P<arg>[A-Za-z_][\w.]*|[\"'][\w.]+[\"'])"
+)
 # Any ``<Enum>.<CONST>`` reference, and any local ``CONST = "dotted.value"``
 # assignment (module-local event enums like ``OdontogramEventType``).
 ENUM_REF_RE = re.compile(r"\b([A-Za-z_]\w*)\.([A-Z][A-Z0-9_]*)\b")
@@ -140,7 +146,7 @@ def _scan_publishers() -> dict[str, list[tuple[str, str, int]]]:
             continue
         for path in sorted(root.rglob("*.py")):
             text = path.read_text(encoding="utf-8", errors="replace")
-            if "event_bus.publish" not in text:
+            if "event_bus.publish" not in text and "queue_after_commit" not in text:
                 continue
             relpath = path.relative_to(REPO_ROOT).as_posix()
             module_name = _module_name_for(path)
@@ -151,13 +157,14 @@ def _scan_publishers() -> dict[str, list[tuple[str, str, int]]]:
             }
 
             has_dynamic = False
-            for match in PUBLISH_ARG_RE.finditer(text):
-                lineno = text.count("\n", 0, match.start()) + 1
-                value = _resolve_token(match.group("arg"), local_consts)
-                if value is not None:
-                    publishers.add((value, module_name, relpath, lineno))
-                else:
-                    has_dynamic = True
+            for call_re in (PUBLISH_ARG_RE, QUEUE_ARG_RE):
+                for match in call_re.finditer(text):
+                    lineno = text.count("\n", 0, match.start()) + 1
+                    value = _resolve_token(match.group("arg"), local_consts)
+                    if value is not None:
+                        publishers.add((value, module_name, relpath, lineno))
+                    else:
+                        has_dynamic = True
 
             if has_dynamic:
                 # Attribute every event constant referenced anywhere in the
@@ -227,7 +234,7 @@ def _render_modules_catalog(modules, publishers) -> str:
         "Single source of truth for every module loaded into the running "
         "DentalPin instance. Generated from module manifests, "
         "`get_permissions()`, `get_event_handlers()`, and grep of "
-        "`event_bus.publish` callsites.\n",
+        "event publisher callsites.\n",
         "Maintained by `backend/scripts/generate_catalogs.py`. CI fails "
         "if a manifest changes without re-generation.\n",
         "## Summary\n",
@@ -331,7 +338,8 @@ def _render_events_catalog(modules, publishers) -> str:
         GENERATED_HEADER,
         "# Events catalog\n",
         "Every event declared in `app.core.events.types.EventType`, with "
-        "its publishers (grepped from `event_bus.publish` callsites) and "
+        "its publishers (grepped from `event_bus.publish` and "
+        "`queue_after_commit` callsites) and "
         "subscribers (modules that return the event from "
         "`get_event_handlers()`).\n",
         "Maintained by `backend/scripts/generate_catalogs.py`.\n",
@@ -363,7 +371,7 @@ def _render_events_catalog(modules, publishers) -> str:
         lines.append("")
         lines.append("## Events published but missing from `EventType` enum\n")
         lines.append(
-            "These literals appear in `event_bus.publish(...)` but do not "
+            "These literals appear in an event publisher call but do not "
             "match any `EventType` constant. Add them to "
             "`backend/app/core/events/types.py` to keep the enum "
             "authoritative.\n"
@@ -435,7 +443,7 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
 
-        # Fail if any ``event_bus.publish`` callsite uses a string literal
+        # Fail if any event publisher callsite uses a string literal
         # that is not in ``EventType``. The catalog already lists them;
         # this turns the listing into an actionable CI gate so the enum
         # stays the source of truth as third-party modules accrue events.

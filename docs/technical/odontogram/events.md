@@ -17,7 +17,7 @@ the legacy surface/tooth update path).
 
 | Event | When | Consumers |
 |-------|------|-----------|
-| `odontogram.treatment.performed` | A planned/charted treatment is marked performed | budget, patient_timeline, payments, periodontogram, treatment_plan |
+| `odontogram.treatment.performed` | After the performed-treatment transaction commits | budget, patient_timeline, payments, periodontogram, treatment_plan |
 | `odontogram.treatment.added` | Treatment added to a tooth | — |
 | `odontogram.treatment.status_changed` | Treatment status transition | — |
 | `odontogram.treatment.deleted` | Treatment removed | — |
@@ -33,6 +33,12 @@ treatment_plan finalizes a sessioned item whose amounts were already
 booked per-session (`treatment_plan.item_session_completed`);
 subscribers must not book revenue for a null price. See the module
 `CLAUDE.md` for the full payload contract.
+
+`TreatmentService.perform` queues this event on the caller's `AsyncSession`
+instead of committing or publishing. Direct odontogram completion and nested
+treatment-plan finalization both finish through
+`commit_and_publish_queued_events`, which commits the full producer transaction
+once and then dispatches the queue. A failed commit emits no performed event.
 
 ## Subscribed
 
