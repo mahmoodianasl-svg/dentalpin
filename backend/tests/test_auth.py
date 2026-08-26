@@ -3,13 +3,15 @@
 import pytest
 from httpx import AsyncClient
 
+from app.version import VERSION
+
 
 @pytest.mark.asyncio
 async def test_health_check(client: AsyncClient) -> None:
     """Test health check endpoint."""
     response = await client.get("/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "healthy"
+    assert response.json() == {"status": "healthy", "version": VERSION}
 
 
 _SETUP_PAYLOAD = {
