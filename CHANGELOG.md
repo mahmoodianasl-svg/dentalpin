@@ -9,6 +9,30 @@ architecture: the monolithic `clinical` module is gone, replaced by
 four purpose-built modules, and every official module now ships its
 frontend as a Nuxt layer under its own Python package.
 
+## [2.2.2] - 2026-08-26
+
+### Added
+
+- **Reproducible delivery gates.** CI now locks the audited Python and Node
+  dependency baselines, verifies the assembled Nuxt host application, checks
+  migrated-schema parity, and exercises encrypted backup/restore recovery.
+- **Release metadata verification.** The API, Python package, frontend package,
+  lockfile, changelog, and release tag must agree before container publication.
+
+### Fixed
+
+- **Database integrity is enforced at the database boundary.** Payment totals,
+  one-default invoice series, appointment overlaps, append-only financial audit
+  history, and tenant-scoped history indexes are now protected and regression
+  tested against rebuilt and migrated schemas.
+- **Domain events are emitted only after successful commits.** Refund, patient,
+  appointment, recall, clinical-note, odontogram, and treatment-plan completion
+  events can no longer escape a transaction that later rolls back; ordered
+  downstream fan-out is preserved after commit.
+- **Production runtime hardening.** Runtime images use pinned, reproducible
+  dependency inputs and a reduced attack surface, including the reviewed
+  frontend base-image and package-manager removals.
+
 ## [2.2.1] - 2026-08-09
 
 ### Fixed

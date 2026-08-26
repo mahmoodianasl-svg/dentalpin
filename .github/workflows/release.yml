@@ -24,7 +24,24 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11.15"
+
+      - name: Verify tag and release metadata agree
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: python scripts/check_release_metadata.py --expected "${RELEASE_TAG#v}"
+
   build:
+    needs: metadata
     strategy:
       fail-fast: false
       matrix:

@@ -29,6 +29,7 @@ from app.core.plugins.service import ModuleService
 from app.core.scheduler import init_scheduler, shutdown_scheduler
 from app.core.schemas import ErrorResponse
 from app.database import async_session_maker, engine, get_db
+from app.version import VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="DentalPin API",
     description="Open source dental clinic management software",
-    version="2.0.0",
+    version=VERSION,
     lifespan=lifespan,
     redirect_slashes=False,
     docs_url="/docs" if settings.ENVIRONMENT == "development" else None,
@@ -207,7 +208,7 @@ async def health_check() -> JSONResponse:
     Cloudflare ended up serving "no available server" until someone redeployed
     by hand).
     """
-    return JSONResponse(content={"status": "healthy", "version": "2.0.0"})
+    return JSONResponse(content={"status": "healthy", "version": VERSION})
 
 
 @app.get("/health/ready")
@@ -229,9 +230,9 @@ async def readiness_check(
         logger.error("Readiness check failed: %s", exc)
         return JSONResponse(
             status_code=503,
-            content={"status": "unready", "version": "2.0.0", "error": str(exc)},
+            content={"status": "unready", "version": VERSION, "error": str(exc)},
         )
-    return JSONResponse(content={"status": "ready", "version": "2.0.0"})
+    return JSONResponse(content={"status": "ready", "version": VERSION})
 
 
 @app.get("/api/v1")
@@ -239,6 +240,6 @@ async def api_root() -> dict:
     """API root endpoint."""
     return {
         "message": "DentalPin API",
-        "version": "2.0.0",
+        "version": VERSION,
         "docs": "/docs" if settings.ENVIRONMENT == "development" else None,
     }
