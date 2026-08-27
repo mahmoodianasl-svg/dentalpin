@@ -102,15 +102,12 @@ def _validated_allowed_origins(environment: str, configured: list[str]) -> list[
         origins.extend(origin for origin in _DEVELOPMENT_ORIGINS if origin not in origins)
     elif "*" in origins:
         raise RuntimeError(
-            "ALLOWED_ORIGINS cannot contain '*' outside development when credentials "
-            "are enabled"
+            "ALLOWED_ORIGINS cannot contain '*' outside development when credentials are enabled"
         )
     return origins
 
 
-allowed_origins = _validated_allowed_origins(
-    settings.ENVIRONMENT, settings.allowed_origins_list
-)
+allowed_origins = _validated_allowed_origins(settings.ENVIRONMENT, settings.allowed_origins_list)
 
 app.add_middleware(
     CORSMiddleware,
