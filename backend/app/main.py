@@ -87,16 +87,30 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
 # Configure CORS
-allowed_origins = settings.allowed_origins_list.copy()
-if settings.ENVIRONMENT == "development":
-    allowed_origins.extend(
-        [
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-            "http://localhost:3001",
-            "http://127.0.0.1:3001",
-        ]
-    )
+_DEVELOPMENT_ORIGINS = (
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+)
+
+
+def _validated_allowed_origins(environment: str, configured: list[str]) -> list[str]:
+    """Build the CORS allow-list and reject unsafe credentialed wildcards."""
+    origins = list(dict.fromkeys(configured))
+    if environment.lower() == "development":
+        origins.extend(origin for origin in _DEVELOPMENT_ORIGINS if origin not in origins)
+    elif "*" in origins:
+        raise RuntimeError(
+            "ALLOWED_ORIGINS cannot contain '*' outside development when credentials "
+            "are enabled"
+        )
+    return origins
+
+
+allowed_origins = _validated_allowed_origins(
+    settings.ENVIRONMENT, settings.allowed_origins_list
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -226,11 +240,11 @@ async def readiness_check(
     """
     try:
         await db.execute(text("SELECT 1 FROM users LIMIT 1"))
-    except Exception as exc:
-        logger.error("Readiness check failed: %s", exc)
+    except Exception:
+        logger.exception("Readiness check failed")
         return JSONResponse(
             status_code=503,
-            content={"status": "unready", "version": VERSION, "error": str(exc)},
+            content={"status": "unready", "version": VERSION},
         )
     return JSONResponse(content={"status": "ready", "version": VERSION})
 

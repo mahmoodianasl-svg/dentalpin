@@ -90,13 +90,14 @@ from app.modules.verifactu.models import (  # noqa: F401
     VerifactuSettings,
     VerifactuVatClassification,
 )
+from tests.database_safety import assert_disposable_test_database_url
 
 # Load modules manually for tests (normally done in lifespan)
 load_modules(app)
 
-# Use the DATABASE_URL directly - CI already provides the test database URL
-# For local development, ensure DATABASE_URL points to test database
-TEST_DATABASE_URL = settings.DATABASE_URL
+# The shared fixture below creates and drops the complete application metadata.
+# Refuse to create an engine unless DATABASE_URL is explicitly disposable.
+TEST_DATABASE_URL = assert_disposable_test_database_url(settings.DATABASE_URL)
 
 
 @pytest_asyncio.fixture(autouse=True)
