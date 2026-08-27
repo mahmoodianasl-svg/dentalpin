@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.config import settings
+from app.core.events import commit_and_publish_queued_events, discard_queued_events
 
 # Create async engine with connection pool settings.
 #
@@ -60,12 +61,18 @@ class TimestampMixin:
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Dependency that provides a database session."""
+    """Dependency that provides a database session.
+
+    Domain events queued with ``queue_after_commit`` are published only after
+    the request transaction commits successfully. A failed request discards
+    its pending events before rollback so later session use cannot leak them.
+    """
     async with async_session_maker() as session:
         try:
             yield session
-            await session.commit()
+            await commit_and_publish_queued_events(session)
         except Exception:
+            discard_queued_events(session)
             await session.rollback()
             raise
         finally:
