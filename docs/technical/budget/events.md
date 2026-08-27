@@ -10,6 +10,12 @@ Per-module slice of [`docs/events-catalog.md`](../../events-catalog.md)
 
 ## Published
 
+Budget lifecycle events are queued on the session and released only after the
+owning transaction commits successfully. This includes request-scoped staff and
+public workflows, scheduled expiry/reminder jobs, and the Copilot send tool.
+`budget.superseded` remains an explicit commit-then-publish path because its
+subscriber must point a foreign key at the newly committed budget row.
+
 | Event | When | Payload |
 |-------|------|---------|
 | `budget.sent` | Budget marked as sent (email or manual delivery). | `budget_id`, `clinic_id`, `patient_id`, `budget_number`, `plan_id` (nullable), delivery metadata. |
@@ -18,7 +24,7 @@ Per-module slice of [`docs/events-catalog.md`](../../events-catalog.md)
 | `budget.expired` | Daily cron, `valid_until < today` while draft/sent. | Snapshot incl. `days_overdue`, `plan_id`. |
 | `budget.renegotiated` | `POST /budgets/{id}/renegotiate` cancels a sent budget for renegotiation. | `budget_id`, `plan_id` (nullable), `patient_id`, `version`, `cancelled_at`, `cancelled_by`. Subscriber: `treatment_plan` (pending → draft). |
 | `budget.cancelled` | `POST /budgets/{id}/cancel` — staff cancels directly (issue #162). **Not** published when the cancel is initiated by `treatment_plan.reopen()` (`publish_event=False`) — the plan module owns that transition and an echo would deadlock. | `clinic_id`, `budget_id`, `patient_id`, `budget_number`, `plan_id` (nullable), `reason`, `cancelled_by`, `occurred_at`. Subscriber: `treatment_plan` (pending → draft). |
-| `budget.superseded` | `POST /budgets/{id}/resend` clones a terminal (rejected/expired/cancelled) budget to a new draft version (issue #162). **Published after the request transaction commits** — sole deviation from the pre-commit pattern; the subscriber points an FK at the new row, which is invisible pre-commit. | `clinic_id`, `budget_id` (old), `new_budget_id`, `patient_id`, `plan_id`, `version` (new), `resent_by`, `occurred_at`. Subscriber: `treatment_plan` (repoints `budget_id`). |
+| `budget.superseded` | `POST /budgets/{id}/resend` clones a terminal (rejected/expired/cancelled) budget to a new draft version (issue #162). **Published after the request transaction commits** so the subscriber can safely point its FK at the new row. | `clinic_id`, `budget_id` (old), `new_budget_id`, `patient_id`, `plan_id`, `version` (new), `resent_by`, `occurred_at`. Subscriber: `treatment_plan` (repoints `budget_id`). |
 | `budget.viewed` | Patient opens the public link (first time, idempotent). | `budget_id`, `plan_id`, `patient_id`, `viewed_at`, `ip_hash`. |
 | `budget.reminder_sent` | Automatic reminder milestone (7d / 14d). | `budget_id`, `plan_id`, `patient_id`, `milestone_days`, `sent_at`. |
 
@@ -38,7 +44,8 @@ treatment_plan models (ADR 0003). It is `null` for standalone budgets.
 ## Adding a new event
 
 1. Add the constant to `backend/app/core/events/types.py` (`EventType`).
-2. Publish from a service method, after the DB commit succeeds.
+2. Queue it with `queue_after_commit` and ensure the transaction owner finishes
+   with `commit_and_publish_queued_events` (request sessions do this centrally).
 3. Add the row to the table(s) above.
 4. Run `python backend/scripts/generate_catalogs.py` to refresh the
    global catalog.

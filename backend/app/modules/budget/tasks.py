@@ -19,6 +19,7 @@ from uuid import UUID
 
 from sqlalchemy import select, text
 
+from app.core.events import commit_and_publish_queued_events
 from app.database import async_session_maker
 
 from .models import Budget
@@ -47,7 +48,7 @@ async def _expire_for_clinic(clinic_id: UUID, sem: asyncio.Semaphore) -> None:
     async with sem, async_session_maker() as db:
         try:
             await BudgetWorkflowService.check_expired_budgets(db, clinic_id)
-            await db.commit()
+            await commit_and_publish_queued_events(db)
         except Exception as exc:
             logger.error("expire_budgets failed for clinic %s: %s", clinic_id, exc, exc_info=True)
             await db.rollback()
@@ -107,7 +108,7 @@ async def _send_reminders_for_clinic(clinic_id: UUID, today: date, sem: asyncio.
                 else:
                     continue
                 await BudgetWorkflowService.send_reminder(db, budget, milestone_days=milestone)
-            await db.commit()
+            await commit_and_publish_queued_events(db)
         except Exception as exc:
             logger.error(
                 "send_budget_reminders failed for clinic %s: %s",

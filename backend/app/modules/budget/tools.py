@@ -16,6 +16,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.core.agents import AgentContext, Tool, ToolCategory
+from app.core.events import commit_and_publish_queued_events
 
 from .schemas import BudgetStatus
 from .service import BudgetService
@@ -117,6 +118,7 @@ async def _send_budget(ctx: AgentContext, params: SendBudgetArgs) -> dict:
             recipient_email=recipient_email,
             custom_message=params.custom_message,
         )
+        await commit_and_publish_queued_events(ctx.db)
     except BudgetWorkflowError as e:
         return {"error": "workflow_error", "detail": str(e), "status": budget.status}
     return {"id": budget.id, "status": budget.status, "recipient_email": recipient_email}

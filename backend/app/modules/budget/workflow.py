@@ -10,7 +10,7 @@ import bcrypt
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.events import EventType, event_bus
+from app.core.events import EventType, queue_after_commit
 
 from .models import Budget, BudgetAccessLog, BudgetSignature
 from .service import BudgetHistoryService
@@ -157,7 +157,8 @@ class BudgetWorkflowService:
         await db.flush()
 
         # Publish event for notifications + timeline modules
-        await event_bus.publish(
+        queue_after_commit(
+            db,
             EventType.BUDGET_SENT,
             {
                 "clinic_id": str(budget.clinic_id),
@@ -295,7 +296,8 @@ class BudgetWorkflowService:
             )
 
         plan_id = await BudgetWorkflowService._lookup_plan_id(db, budget.id)
-        await event_bus.publish(
+        queue_after_commit(
+            db,
             EventType.BUDGET_ACCEPTED,
             {
                 "clinic_id": str(budget.clinic_id),
@@ -372,7 +374,8 @@ class BudgetWorkflowService:
         await db.flush()
 
         plan_id = await BudgetWorkflowService._lookup_plan_id(db, budget.id)
-        await event_bus.publish(
+        queue_after_commit(
+            db,
             EventType.BUDGET_REJECTED,
             {
                 "clinic_id": str(budget.clinic_id),
@@ -425,11 +428,12 @@ class BudgetWorkflowService:
         await db.flush()
 
         if publish_event:
-            # Safe pre-commit publish: our transaction only holds locks
-            # on budgets/budget_history; the handler writes only the
-            # (long-committed) treatment_plans row.
+            # Queue until the owning transaction commits so the handler
+            # cannot persist a plan projection for a budget transition
+            # that later rolls back.
             plan_id = await BudgetWorkflowService._lookup_plan_id(db, budget.id)
-            await event_bus.publish(
+            queue_after_commit(
+                db,
                 EventType.BUDGET_CANCELLED,
                 {
                     "clinic_id": str(budget.clinic_id),
@@ -497,7 +501,8 @@ class BudgetWorkflowService:
         for budget in expired_budgets:
             plan_id = await BudgetWorkflowService._lookup_plan_id(db, budget.id)
             days_overdue = (today - budget.valid_until).days if budget.valid_until else None
-            await event_bus.publish(
+            queue_after_commit(
+                db,
                 EventType.BUDGET_EXPIRED,
                 {
                     "clinic_id": str(budget.clinic_id),
@@ -578,7 +583,8 @@ class BudgetWorkflowService:
         await db.flush()
 
         plan_id = await BudgetWorkflowService._lookup_plan_id(db, budget.id)
-        await event_bus.publish(
+        queue_after_commit(
+            db,
             EventType.BUDGET_RENEGOTIATED,
             {
                 "clinic_id": str(budget.clinic_id),
@@ -606,7 +612,8 @@ class BudgetWorkflowService:
         budget.viewed_at = datetime.now(UTC)
         await db.flush()
         plan_id = await BudgetWorkflowService._lookup_plan_id(db, budget.id)
-        await event_bus.publish(
+        queue_after_commit(
+            db,
             EventType.BUDGET_VIEWED,
             {
                 "clinic_id": str(budget.clinic_id),
@@ -633,7 +640,8 @@ class BudgetWorkflowService:
         budget.last_reminder_sent_at = datetime.now(UTC)
         await db.flush()
         plan_id = await BudgetWorkflowService._lookup_plan_id(db, budget.id)
-        await event_bus.publish(
+        queue_after_commit(
+            db,
             EventType.BUDGET_REMINDER_SENT,
             {
                 "clinic_id": str(budget.clinic_id),
