@@ -15,6 +15,7 @@ from app.config import settings
 
 # Import all models so SQLAlchemy can configure relationships
 from app.core.auth.models import Clinic, ClinicMembership, User  # noqa: F401
+from app.core.events import commit_and_publish_queued_events, discard_queued_events
 from app.core.plugins.loader import load_modules
 from app.database import Base, get_db
 from app.database import engine as app_engine
@@ -136,10 +137,20 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
 @pytest_asyncio.fixture(scope="function")
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    """Create an HTTP client for testing."""
+    """Create an HTTP client for testing.
+
+    Mirror the production ``get_db`` transaction boundary so API tests exercise
+    post-commit domain-event delivery instead of a bare shared-session yield.
+    """
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
-        yield db_session
+        try:
+            yield db_session
+            await commit_and_publish_queued_events(db_session)
+        except Exception:
+            discard_queued_events(db_session)
+            await db_session.rollback()
+            raise
 
     app.dependency_overrides[get_db] = override_get_db
 
