@@ -208,7 +208,7 @@ Maintained by `backend/scripts/generate_catalogs.py`.
 
 - **Constant:** `EventType.BUDGET_ACCEPTED`
 - **Publishers:**
-  - `budget` — `backend/app/modules/budget/workflow.py:298`
+  - `budget` — `backend/app/modules/budget/workflow.py:299`
 - **Subscribers:**
   - `notifications`
   - `patient_timeline`
@@ -218,7 +218,7 @@ Maintained by `backend/scripts/generate_catalogs.py`.
 
 - **Constant:** `EventType.BUDGET_CANCELLED`
 - **Publishers:**
-  - `budget` — `backend/app/modules/budget/workflow.py:432`
+  - `budget` — `backend/app/modules/budget/workflow.py:435`
 - **Subscribers:**
   - `treatment_plan`
 
@@ -232,7 +232,7 @@ Maintained by `backend/scripts/generate_catalogs.py`.
 
 - **Constant:** `EventType.BUDGET_EXPIRED`
 - **Publishers:**
-  - `budget` — `backend/app/modules/budget/workflow.py:500`
+  - `budget` — `backend/app/modules/budget/workflow.py:504`
 - **Subscribers:**
   - `patient_timeline`
 
@@ -240,7 +240,7 @@ Maintained by `backend/scripts/generate_catalogs.py`.
 
 - **Constant:** `EventType.BUDGET_REJECTED`
 - **Publishers:**
-  - `budget` — `backend/app/modules/budget/workflow.py:375`
+  - `budget` — `backend/app/modules/budget/workflow.py:377`
 - **Subscribers:**
   - `patient_timeline`
   - `treatment_plan`
@@ -249,7 +249,7 @@ Maintained by `backend/scripts/generate_catalogs.py`.
 
 - **Constant:** `EventType.BUDGET_REMINDER_SENT`
 - **Publishers:**
-  - `budget` — `backend/app/modules/budget/workflow.py:636`
+  - `budget` — `backend/app/modules/budget/workflow.py:643`
 - **Subscribers:**
   - `patient_timeline`
 
@@ -257,7 +257,7 @@ Maintained by `backend/scripts/generate_catalogs.py`.
 
 - **Constant:** `EventType.BUDGET_RENEGOTIATED`
 - **Publishers:**
-  - `budget` — `backend/app/modules/budget/workflow.py:581`
+  - `budget` — `backend/app/modules/budget/workflow.py:586`
 - **Subscribers:**
   - `patient_timeline`
   - `treatment_plan`
@@ -283,7 +283,7 @@ Maintained by `backend/scripts/generate_catalogs.py`.
 
 - **Constant:** `EventType.BUDGET_VIEWED`
 - **Publishers:**
-  - `budget` — `backend/app/modules/budget/workflow.py:609`
+  - `budget` — `backend/app/modules/budget/workflow.py:615`
 - **Subscribers:**
   - `patient_timeline`
 
