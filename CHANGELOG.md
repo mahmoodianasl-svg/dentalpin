@@ -9,6 +9,26 @@ architecture: the monolithic `clinical` module is gone, replaced by
 four purpose-built modules, and every official module now ships its
 frontend as a Nuxt layer under its own Python package.
 
+## [2.2.3] - 2026-08-27
+
+### Fixed
+
+- **Destructive test setup now fails closed.** Pytest database setup refuses to
+  run unless `DATABASE_URL` explicitly identifies a disposable test or
+  schema-validation database, while guard errors avoid disclosing credentials
+  or database hosts.
+- **Readiness failures no longer disclose database internals.** `/health/ready`
+  logs raw database exceptions server-side while returning sanitized client
+  responses.
+- **Credentialed CORS rejects wildcard origins outside development.**
+  Production-like environments can no longer combine `ALLOWED_ORIGINS=*` with
+  credentialed CORS.
+
+### Tests
+
+- Added focused regression coverage for all three release-safety boundaries,
+  including database-guard credential and host non-disclosure.
+
 ## [2.2.2] - 2026-08-26
 
 ### Added
