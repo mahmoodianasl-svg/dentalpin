@@ -19,8 +19,8 @@ from .models import PatientAgentSession
 from .providers.openai_realtime import OpenAIRealtimeProvider
 from .schemas import (
     AppointmentAvailabilityRequest,
-    AppointmentConfirmRequest,
     AppointmentConfirmedResponse,
+    AppointmentConfirmRequest,
     AppointmentProposalRequest,
     AppointmentProposalResponse,
     AppointmentSlotResponse,
