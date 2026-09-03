@@ -98,7 +98,9 @@ async def patient_appointment_availability(
             professional_id=payload.professional_id,
         )
     except (PermissionError, ValueError) as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Availability not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Availability not found"
+        ) from exc
     return ApiResponse(
         data=[
             AppointmentSlotResponse(
@@ -120,7 +122,9 @@ async def propose_patient_appointment(
     principal: Annotated[PatientPrincipal, Depends(get_patient_principal)],
 ) -> ApiResponse[AppointmentProposalResponse]:
     if payload.ends_at <= payload.starts_at:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid appointment slot")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid appointment slot"
+        )
     token = create_appointment_confirmation_token(
         clinic_id=principal.clinic_id,
         patient_id=principal.patient_id,
@@ -163,7 +167,9 @@ async def confirm_patient_appointment(
             confirmation_token=payload.confirmation_token,
         )
     except PermissionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Confirmation rejected") from exc
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Confirmation rejected"
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return ApiResponse(data=AppointmentConfirmedResponse(appointment_id=appointment_id))
@@ -176,7 +182,9 @@ async def request_patient_handoff(
     principal: Annotated[PatientPrincipal, Depends(get_patient_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ApiResponse[dict]:
-    result = await db.execute(select(PatientAgentSession).where(PatientAgentSession.id == session_id))
+    result = await db.execute(
+        select(PatientAgentSession).where(PatientAgentSession.id == session_id)
+    )
     session = result.scalar_one_or_none()
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
@@ -190,5 +198,7 @@ async def request_patient_handoff(
             urgency=payload.urgency,
         )
     except PermissionError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+        ) from exc
     return ApiResponse(data={"session_id": str(session_id), "handoff_state": "requested"})
