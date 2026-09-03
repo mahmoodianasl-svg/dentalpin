@@ -15,3 +15,4 @@
 - Added explicit confirmation boundaries for appointment and other sensitive administrative mutations.
 - Added reversible isolated `pag_0001` Alembic migration branch.
 - Added administrator foundation-status API and focused contract tests.
+- Registered the module in the generated DentalPin module catalog.
