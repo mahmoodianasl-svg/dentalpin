@@ -45,6 +45,8 @@ async def test_realtime_provider_fails_closed_without_server_api_key() -> None:
 
 def test_patient_token_rejects_tampering() -> None:
     token = create_patient_session_token(patient_id=uuid4(), clinic_id=uuid4())
-    tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
+    header, payload, signature = token.split(".")
+    replacement = "A" if signature[0] != "A" else "B"
+    tampered = f"{header}.{payload}.{replacement}{signature[1:]}"
     with pytest.raises(ValueError, match="Invalid or expired patient session token"):
         decode_patient_session_token(tampered)
