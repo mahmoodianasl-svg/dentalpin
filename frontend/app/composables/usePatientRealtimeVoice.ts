@@ -77,7 +77,7 @@ export function usePatientRealtimeVoice() {
     const response = await fetch(OPENAI_REALTIME_CALLS_URL, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${clientSecret}`,
+        'Authorization': `Bearer ${clientSecret}`,
         'Content-Type': 'application/sdp'
       },
       body: offer.sdp
