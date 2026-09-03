@@ -95,7 +95,7 @@ export function usePatientRealtimeVoice() {
     if (!options.patientToken.trim()) {
       throw new Error('Patient session token is required')
     }
-    if (!import.meta.client) {
+    if (typeof window === 'undefined') {
       throw new Error('Realtime voice requires a browser')
     }
     if (!navigator.mediaDevices?.getUserMedia) {
