@@ -5,6 +5,7 @@ explain approved information, and propose administrative actions. It may not
 autonomously diagnose, prescribe, alter clinical records, or execute sensitive
 writes without an explicit confirmation/human approval boundary.
 """
+
 from __future__ import annotations
 
 from enum import StrEnum
@@ -17,21 +18,25 @@ class AgentRiskLevel(StrEnum):
     EMERGENCY_ESCALATION = "emergency_escalation"
 
 
-AUTONOMOUSLY_FORBIDDEN = frozenset({
-    "diagnose",
-    "prescribe",
-    "alter_clinical_record",
-    "finalize_clinical_note",
-    "approve_treatment_plan",
-})
+AUTONOMOUSLY_FORBIDDEN = frozenset(
+    {
+        "diagnose",
+        "prescribe",
+        "alter_clinical_record",
+        "finalize_clinical_note",
+        "approve_treatment_plan",
+    }
+)
 
-CONFIRMATION_REQUIRED = frozenset({
-    "create_appointment",
-    "reschedule_appointment",
-    "cancel_appointment",
-    "send_patient_message",
-    "record_payment_intent",
-})
+CONFIRMATION_REQUIRED = frozenset(
+    {
+        "create_appointment",
+        "reschedule_appointment",
+        "cancel_appointment",
+        "send_patient_message",
+        "record_payment_intent",
+    }
+)
 
 
 def action_allowed_without_confirmation(action: str) -> bool:
