@@ -19,8 +19,12 @@ async function startVoice() {
 <template>
   <div class="mx-auto w-full max-w-2xl p-6 space-y-5">
     <div>
-      <p class="text-sm text-muted">DentalPin Patient AI</p>
-      <h1 class="text-2xl font-semibold">Realtime voice assistant</h1>
+      <p class="text-sm text-muted">
+        DentalPin Patient AI
+      </p>
+      <h1 class="text-2xl font-semibold">
+        Realtime voice assistant
+      </h1>
       <p class="mt-2 text-sm text-muted">
         This assistant can help with intake, general information and appointment support. It does not diagnose or prescribe.
       </p>
@@ -96,7 +100,10 @@ async function startVoice() {
           </span>
         </div>
 
-        <p v-if="voice.sessionId.value" class="text-xs text-muted break-all">
+        <p
+          v-if="voice.sessionId.value"
+          class="text-xs text-muted break-all"
+        >
           Session: {{ voice.sessionId.value }}
         </p>
       </div>
@@ -104,8 +111,12 @@ async function startVoice() {
 
     <UCard>
       <div class="space-y-2 text-sm text-muted">
-        <p class="font-medium text-default">Safety</p>
-        <p>For severe pain, uncontrolled bleeding, breathing difficulty, major facial swelling or another emergency, contact local emergency services or your dental clinic directly.</p>
+        <p class="font-medium text-default">
+          Safety
+        </p>
+        <p>
+          For severe pain, uncontrolled bleeding, breathing difficulty, major facial swelling or another emergency, contact local emergency services or your dental clinic directly.
+        </p>
       </div>
     </UCard>
   </div>
