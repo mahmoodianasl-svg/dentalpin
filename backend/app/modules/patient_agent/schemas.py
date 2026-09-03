@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -34,3 +35,26 @@ class FoundationStatus(BaseModel):
             ConsentRequirement(consent_type="recording", required=False),
         ]
     )
+
+
+class RealtimeSessionCreate(BaseModel):
+    channel: Literal["text", "voice", "video"]
+    locale: str | None = None
+    ai_consent: bool
+    audio_consent: bool = False
+    video_consent: bool = False
+
+
+class RealtimeSessionCreated(BaseModel):
+    session_id: UUID
+    channel: Literal["text", "voice", "video"]
+    provider: str
+    client_secret: str | None = None
+    expires_at_epoch: int | None = None
+    authenticated: bool = True
+    autonomous_clinical_writes: bool = False
+
+
+class HumanHandoffRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=2000)
+    urgency: Literal["routine", "soon", "urgent", "emergency"] = "routine"
