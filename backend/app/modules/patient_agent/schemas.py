@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -58,3 +59,39 @@ class RealtimeSessionCreated(BaseModel):
 class HumanHandoffRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
     urgency: Literal["routine", "soon", "urgent", "emergency"] = "routine"
+
+
+class AppointmentAvailabilityRequest(BaseModel):
+    professional_id: UUID
+    starts_after: datetime
+    ends_before: datetime
+
+
+class AppointmentSlotResponse(BaseModel):
+    professional_id: UUID
+    starts_at: datetime
+    ends_at: datetime
+
+
+class AppointmentProposalRequest(BaseModel):
+    professional_id: UUID
+    starts_at: datetime
+    ends_at: datetime
+
+
+class AppointmentProposalResponse(BaseModel):
+    slot: AppointmentSlotResponse
+    confirmation_token: str
+    confirmation_required: bool = True
+
+
+class AppointmentConfirmRequest(BaseModel):
+    professional_id: UUID
+    starts_at: datetime
+    ends_at: datetime
+    confirmation_token: str = Field(min_length=1)
+
+
+class AppointmentConfirmedResponse(BaseModel):
+    appointment_id: UUID
+    status: Literal["scheduled"] = "scheduled"
