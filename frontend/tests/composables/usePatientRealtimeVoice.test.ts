@@ -36,8 +36,16 @@ class MockPeerConnection {
   close = vi.fn()
 }
 
-const peer = new MockPeerConnection()
-vi.stubGlobal('RTCPeerConnection', vi.fn(() => peer))
+let peer: MockPeerConnection
+
+class MockRTCPeerConnection {
+  constructor() {
+    peer = new MockPeerConnection()
+    return peer as unknown as MockRTCPeerConnection
+  }
+}
+
+vi.stubGlobal('RTCPeerConnection', MockRTCPeerConnection)
 
 const track = { stop: vi.fn(), enabled: true }
 const stream = {
