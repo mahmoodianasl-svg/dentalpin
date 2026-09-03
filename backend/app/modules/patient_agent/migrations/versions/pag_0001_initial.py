@@ -45,9 +45,7 @@ def upgrade() -> None:
             "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
     )
-    op.create_index(
-        "ix_patient_agent_sessions_clinic_id", "patient_agent_sessions", ["clinic_id"]
-    )
+    op.create_index("ix_patient_agent_sessions_clinic_id", "patient_agent_sessions", ["clinic_id"])
     op.create_index(
         "ix_patient_agent_sessions_patient_id", "patient_agent_sessions", ["patient_id"]
     )
@@ -74,9 +72,7 @@ def upgrade() -> None:
     op.create_index(
         "ix_patient_agent_consents_session_id", "patient_agent_consents", ["session_id"]
     )
-    op.create_index(
-        "ix_patient_agent_consents_clinic_id", "patient_agent_consents", ["clinic_id"]
-    )
+    op.create_index("ix_patient_agent_consents_clinic_id", "patient_agent_consents", ["clinic_id"])
     op.create_index(
         "ix_patient_agent_consents_patient_id", "patient_agent_consents", ["patient_id"]
     )
