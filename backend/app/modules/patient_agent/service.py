@@ -26,7 +26,11 @@ class PatientAgentService:
         audio_consent: bool,
         video_consent: bool,
     ) -> tuple[PatientAgentSession, str | None, int | None]:
-        required = {"text": ai_consent, "voice": ai_consent and audio_consent, "video": ai_consent and audio_consent and video_consent}
+        required = {
+            "text": ai_consent,
+            "voice": ai_consent and audio_consent,
+            "video": ai_consent and audio_consent and video_consent,
+        }
         if channel not in required:
             raise ValueError("Unsupported patient-agent channel")
         if not required[channel]:
