@@ -14,8 +14,12 @@ async def get_patient_principal(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_patient_bearer)],
 ) -> PatientPrincipal:
     if credentials is None or credentials.scheme.lower() != "bearer":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Patient authentication required")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Patient authentication required"
+        )
     try:
         return decode_patient_session_token(credentials.credentials)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid patient session") from exc
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid patient session"
+        ) from exc
