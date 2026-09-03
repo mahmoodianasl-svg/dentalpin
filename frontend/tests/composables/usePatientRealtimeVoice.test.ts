@@ -14,6 +14,7 @@ vi.stubGlobal('computed', (getter: () => unknown) => ({
   }
 }))
 vi.stubGlobal('ref', ref)
+vi.stubGlobal('window', {})
 
 const fetchMock = vi.fn()
 vi.stubGlobal('$fetch', fetchMock)
@@ -26,9 +27,11 @@ class MockPeerConnection {
   addTrack = vi.fn()
   createDataChannel = vi.fn(() => ({ close: vi.fn(), onerror: null }))
   createOffer = vi.fn(async () => ({ type: 'offer', sdp: 'offer-sdp' }))
+
   setLocalDescription = vi.fn(async (description) => {
     this.localDescription = description
   })
+
   setRemoteDescription = vi.fn(async () => undefined)
   close = vi.fn()
 }
