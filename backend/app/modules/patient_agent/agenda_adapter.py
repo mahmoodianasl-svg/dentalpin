@@ -108,9 +108,10 @@ class DentalPinPatientAppointmentAdapter:
         )
         if claims.get("professional_id") != str(slot.professional_id):
             raise PermissionError("Confirmation token does not match professional")
-        if claims.get("starts_at") != slot.starts_at.isoformat() or claims.get(
-            "ends_at"
-        ) != slot.ends_at.isoformat():
+        if (
+            claims.get("starts_at") != slot.starts_at.isoformat()
+            or claims.get("ends_at") != slot.ends_at.isoformat()
+        ):
             raise PermissionError("Confirmation token does not match appointment slot")
         if not await AppointmentService.validate_patient_access(self.db, clinic_id, patient_id):
             raise PermissionError("Patient not found")
