@@ -47,7 +47,10 @@ def decode_appointment_confirmation_token(
     except JWTError as exc:
         raise ValueError("Invalid or expired confirmation token") from exc
 
-    if payload.get("type") != "patient_confirmation" or payload.get("purpose") != _CONFIRMATION_PURPOSE:
+    if (
+        payload.get("type") != "patient_confirmation"
+        or payload.get("purpose") != _CONFIRMATION_PURPOSE
+    ):
         raise ValueError("Invalid appointment confirmation token")
     if payload.get("clinic_id") != str(clinic_id) or payload.get("patient_id") != str(patient_id):
         raise PermissionError("Confirmation token scope mismatch")
