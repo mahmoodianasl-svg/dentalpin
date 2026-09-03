@@ -1,12 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 
+import { usePatientRealtimeVoice } from '../../app/composables/usePatientRealtimeVoice'
+
 vi.stubGlobal('useRuntimeConfig', () => ({
   public: { apiBaseUrl: 'http://localhost:8000' }
 }))
 vi.stubGlobal('onBeforeUnmount', vi.fn())
 vi.stubGlobal('readonly', (value: unknown) => value)
-vi.stubGlobal('computed', (getter: () => unknown) => ({ get value() { return getter() } }))
+vi.stubGlobal('computed', (getter: () => unknown) => ({
+  get value() {
+    return getter()
+  }
+}))
 vi.stubGlobal('ref', ref)
 
 const fetchMock = vi.fn()
@@ -20,7 +26,9 @@ class MockPeerConnection {
   addTrack = vi.fn()
   createDataChannel = vi.fn(() => ({ close: vi.fn(), onerror: null }))
   createOffer = vi.fn(async () => ({ type: 'offer', sdp: 'offer-sdp' }))
-  setLocalDescription = vi.fn(async (description) => { this.localDescription = description })
+  setLocalDescription = vi.fn(async (description) => {
+    this.localDescription = description
+  })
   setRemoteDescription = vi.fn(async () => undefined)
   close = vi.fn()
 }
