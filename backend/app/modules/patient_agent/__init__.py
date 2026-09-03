@@ -5,6 +5,7 @@ patient-agent session/consent/audit state and consumes DentalPin capabilities
 through explicit tool contracts. It MUST NOT diagnose, prescribe, or commit
 clinical records autonomously.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter
