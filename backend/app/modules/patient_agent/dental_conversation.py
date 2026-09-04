@@ -145,7 +145,9 @@ class DentalConversationPlanner:
         if IntakeSignal.SWELLING in signals or IntakeSignal.FACIAL_OR_NECK_SWELLING in signals:
             questions.append("When did the swelling start, and is it getting worse?")
         if IntakeSignal.TRAUMA in signals:
-            questions.append("When did the injury happen, and is a tooth loose, displaced, or missing?")
+            questions.append(
+                "When did the injury happen, and is a tooth loose, displaced, or missing?"
+            )
         return tuple(questions)
 
 
