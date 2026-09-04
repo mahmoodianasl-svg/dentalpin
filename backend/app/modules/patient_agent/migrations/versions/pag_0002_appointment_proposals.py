@@ -33,7 +33,6 @@ def upgrade() -> None:
         sa.Column(
             "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
-        sa.UniqueConstraint("jti", name="uq_patient_agent_appointment_proposals_jti"),
     )
     op.create_index(
         "ix_patient_agent_appointment_proposals_jti",
