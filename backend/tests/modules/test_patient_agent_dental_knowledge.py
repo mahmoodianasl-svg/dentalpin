@@ -54,7 +54,9 @@ async def test_only_fully_reviewed_patient_education_content_is_retrieved() -> N
         )
     )
 
-    results = await retriever.search(query="dental implant", locale="en", topic=DentalTopic.IMPLANTS)
+    results = await retriever.search(
+        query="dental implant", locale="en", topic=DentalTopic.IMPLANTS
+    )
 
     assert [entry.entry_id for entry in results] == ["approved"]
 
@@ -104,7 +106,11 @@ async def test_lexical_ranking_is_deterministic_and_limit_is_respected() -> None
     retriever = CuratedDentalKnowledgeRetriever(
         (
             CuratedDentalKnowledgeRecord(
-                _entry("strong", title="Dental implant appointment", content="implant appointment implant"),
+                _entry(
+                    "strong",
+                    title="Dental implant appointment",
+                    content="implant appointment implant",
+                ),
                 clinically_reviewed=True,
                 approved_for_patient_education=True,
             ),
