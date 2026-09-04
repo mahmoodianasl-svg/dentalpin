@@ -41,12 +41,11 @@ def test_foundation_is_disabled_by_default() -> None:
     assert status.enabled is False
     assert status.capabilities.text is True
     assert status.capabilities.voice is True
-    assert status.capabilities.video is True
+    assert status.capabilities.video is False
     assert status.capabilities.autonomous_diagnosis is False
     assert status.capabilities.autonomous_prescribing is False
     assert status.capabilities.autonomous_clinical_writes is False
     assert {item.consent_type for item in status.consent if item.required} == {
         "ai",
         "audio",
-        "video",
     }
