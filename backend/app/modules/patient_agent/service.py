@@ -29,7 +29,6 @@ class PatientAgentService:
         required = {
             "text": ai_consent,
             "voice": ai_consent and audio_consent,
-            "video": ai_consent and audio_consent and video_consent,
         }
         if channel not in required:
             raise ValueError("Unsupported patient-agent channel")
@@ -49,10 +48,8 @@ class PatientAgentService:
         await db.flush()
 
         consents = [("ai", ai_consent)]
-        if channel in {"voice", "video"}:
+        if channel == "voice":
             consents.append(("audio", audio_consent))
-        if channel == "video":
-            consents.append(("video", video_consent))
         for consent_type, granted in consents:
             db.add(
                 PatientAgentConsent(
@@ -67,14 +64,32 @@ class PatientAgentService:
             )
 
         modalities = ("text",) if channel == "text" else ("audio", "text")
-        descriptor = await self.provider.create_session(
-            RealtimeSessionRequest(
-                session_id=str(session.id),
-                channel=channel,
-                locale=locale,
-                modalities=modalities,
+        try:
+            descriptor = await self.provider.create_session(
+                RealtimeSessionRequest(
+                    session_id=str(session.id),
+                    channel=channel,
+                    locale=locale,
+                    modalities=modalities,
+                )
             )
-        )
+        except Exception as exc:
+            session.status = "failed"
+            db.add(
+                PatientAgentAuditEvent(
+                    session_id=session.id,
+                    clinic_id=principal.clinic_id,
+                    patient_id=principal.patient_id,
+                    event_type="realtime_session_failed",
+                    actor_type="system",
+                    outcome="failure",
+                    detail={"channel": channel, "provider_error": type(exc).__name__},
+                    reason="Realtime provider session could not be created",
+                )
+            )
+            await db.commit()
+            raise RuntimeError("Realtime provider session failed") from exc
+
         session.status = "active"
         session.provider = descriptor.provider
         session.provider_session_ref = descriptor.provider_session_ref
