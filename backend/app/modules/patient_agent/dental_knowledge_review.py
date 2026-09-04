@@ -8,7 +8,7 @@ store or grant autonomous clinical authority to the patient agent.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from .dental_knowledge import CuratedDentalKnowledgeRecord
@@ -55,7 +55,7 @@ class DentalKnowledgeReviewWorkflow:
             review,
             status=DentalKnowledgeReviewStatus.IN_REVIEW,
             submitted_by=submitted_by,
-            submitted_at=datetime.now(timezone.utc),
+            submitted_at=datetime.now(UTC),
             reviewed_by=None,
             reviewed_at=None,
             decision_note=None,
@@ -83,7 +83,7 @@ class DentalKnowledgeReviewWorkflow:
             record=approved_record,
             status=DentalKnowledgeReviewStatus.APPROVED,
             reviewed_by=dentist_id,
-            reviewed_at=datetime.now(timezone.utc),
+            reviewed_at=datetime.now(UTC),
             decision_note=decision_note,
         )
 
@@ -111,6 +111,6 @@ class DentalKnowledgeReviewWorkflow:
             record=rejected_record,
             status=DentalKnowledgeReviewStatus.REJECTED,
             reviewed_by=dentist_id,
-            reviewed_at=datetime.now(timezone.utc),
+            reviewed_at=datetime.now(UTC),
             decision_note=decision_note,
         )
