@@ -8,9 +8,10 @@ patient-agent safety boundary.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol, Sequence
+from typing import Protocol
 
 from .safety import AgentRiskLevel
 
