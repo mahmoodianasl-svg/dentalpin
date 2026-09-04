@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -12,10 +13,17 @@ from app.core.schemas import ApiResponse
 from app.database import get_db
 
 from .agenda_adapter import DentalPinPatientAppointmentAdapter
-from .confirmation import create_appointment_confirmation_token
+from .confirmation import (
+    create_appointment_confirmation_token,
+    decode_appointment_confirmation_token,
+)
 from .dependencies import get_patient_principal
 from .identity import PatientPrincipal
-from .models import PatientAgentSession
+from .models import (
+    PatientAgentAppointmentProposal,
+    PatientAgentAuditEvent,
+    PatientAgentSession,
+)
 from .providers.openai_realtime import OpenAIRealtimeProvider
 from .schemas import (
     AppointmentAvailabilityRequest,
@@ -120,24 +128,70 @@ async def patient_appointment_availability(
 async def propose_patient_appointment(
     payload: AppointmentProposalRequest,
     principal: Annotated[PatientPrincipal, Depends(get_patient_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ApiResponse[AppointmentProposalResponse]:
-    if payload.ends_at <= payload.starts_at:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid appointment slot"
-        )
-    token = create_appointment_confirmation_token(
-        clinic_id=principal.clinic_id,
-        patient_id=principal.patient_id,
-        professional_id=payload.professional_id,
-        starts_at=payload.starts_at,
-        ends_at=payload.ends_at,
-    )
-    return ApiResponse(
-        data=AppointmentProposalResponse(
-            slot=AppointmentSlotResponse(
+    adapter = DentalPinPatientAppointmentAdapter(db)
+    try:
+        slot = await adapter.validate_slot_available(
+            clinic_id=principal.clinic_id,
+            patient_id=principal.patient_id,
+            slot=AppointmentSlot(
                 professional_id=payload.professional_id,
                 starts_at=payload.starts_at,
                 ends_at=payload.ends_at,
+            ),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    token = create_appointment_confirmation_token(
+        clinic_id=principal.clinic_id,
+        patient_id=principal.patient_id,
+        professional_id=slot.professional_id,
+        starts_at=slot.starts_at,
+        ends_at=slot.ends_at,
+    )
+    claims = decode_appointment_confirmation_token(
+        token,
+        clinic_id=principal.clinic_id,
+        patient_id=principal.patient_id,
+    )
+    expires_at = datetime.fromtimestamp(int(claims["exp"]), tz=UTC)
+    proposal = PatientAgentAppointmentProposal(
+        jti=claims["jti"],
+        clinic_id=principal.clinic_id,
+        patient_id=principal.patient_id,
+        professional_id=slot.professional_id,
+        starts_at=slot.starts_at,
+        ends_at=slot.ends_at,
+        expires_at=expires_at,
+    )
+    db.add(proposal)
+    db.add(
+        PatientAgentAuditEvent(
+            session_id=None,
+            clinic_id=principal.clinic_id,
+            patient_id=principal.patient_id,
+            event_type="appointment_proposal_created",
+            actor_type="patient",
+            outcome="recorded",
+            detail={
+                "proposal_jti": proposal.jti,
+                "professional_id": str(slot.professional_id),
+                "starts_at": slot.starts_at.isoformat(),
+                "ends_at": slot.ends_at.isoformat(),
+            },
+        )
+    )
+    await db.flush()
+    return ApiResponse(
+        data=AppointmentProposalResponse(
+            slot=AppointmentSlotResponse(
+                professional_id=slot.professional_id,
+                starts_at=slot.starts_at,
+                ends_at=slot.ends_at,
             ),
             confirmation_token=token,
         )
@@ -183,22 +237,21 @@ async def request_patient_handoff(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ApiResponse[dict]:
     result = await db.execute(
-        select(PatientAgentSession).where(PatientAgentSession.id == session_id)
+        select(PatientAgentSession).where(
+            PatientAgentSession.id == session_id,
+            PatientAgentSession.clinic_id == principal.clinic_id,
+            PatientAgentSession.patient_id == principal.patient_id,
+        )
     )
     session = result.scalar_one_or_none()
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     service = PatientAgentService(OpenAIRealtimeProvider())
-    try:
-        await service.request_handoff(
-            db=db,
-            principal=principal,
-            session=session,
-            reason=payload.reason,
-            urgency=payload.urgency,
-        )
-    except PermissionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
-        ) from exc
+    await service.request_handoff(
+        db=db,
+        principal=principal,
+        session=session,
+        reason=payload.reason,
+        urgency=payload.urgency,
+    )
     return ApiResponse(data={"session_id": str(session_id), "handoff_state": "requested"})
