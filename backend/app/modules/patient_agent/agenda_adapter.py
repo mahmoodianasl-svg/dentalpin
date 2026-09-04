@@ -124,18 +124,18 @@ class DentalPinPatientAppointmentAdapter:
         if not open_ranges:
             return []
 
-        appointments, _ = await AppointmentService.list_appointments(
-            self.db,
-            clinic_id,
-            start_date=starts_after - timedelta(days=1),
-            end_date=ends_before,
-            professional_id=professional_id,
-            page_size=500,
+        busy_query = select(Appointment).where(
+            Appointment.clinic_id == clinic_id,
+            Appointment.status.in_(_BLOCKING_STATUSES),
+            Appointment.start_time < ends_before,
+            Appointment.end_time > starts_after,
         )
+        if professional_id is not None:
+            busy_query = busy_query.where(Appointment.professional_id == professional_id)
+        busy_result = await self.db.execute(busy_query)
         busy = [
             (appt.start_time, appt.end_time, appt.professional_id)
-            for appt in appointments
-            if appt.status in _BLOCKING_STATUSES and appt.start_time and appt.end_time
+            for appt in busy_result.scalars().all()
         ]
 
         slots: list[AppointmentSlot] = []
