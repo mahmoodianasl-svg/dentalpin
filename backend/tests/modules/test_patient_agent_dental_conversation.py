@@ -100,7 +100,9 @@ async def test_routine_education_uses_curated_knowledge_without_clinical_authori
 
 async def test_no_curated_result_limits_dialogue_to_intake_and_handoff() -> None:
     class EmptyRetriever:
-        async def search(self, *, query: str, locale: str, topic: DentalTopic | None, limit: int = 5):
+        async def search(
+            self, *, query: str, locale: str, topic: DentalTopic | None, limit: int = 5
+        ):
             return ()
 
     planner = DentalConversationPlanner(EmptyRetriever())
@@ -112,5 +114,8 @@ async def test_no_curated_result_limits_dialogue_to_intake_and_handoff() -> None
     )
 
     instructions = build_dental_system_instructions(plan)
-    assert "No curated source retrieved; keep the response limited to intake and handoff." in instructions
+    assert (
+        "No curated source retrieved; keep the response limited to intake and handoff."
+        in instructions
+    )
     assert "Do not present possibilities as confirmed conditions." in instructions
