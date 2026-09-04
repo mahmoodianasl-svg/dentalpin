@@ -19,6 +19,8 @@ vi.stubGlobal('window', {})
 const fetchMock = vi.fn()
 vi.stubGlobal('$fetch', fetchMock)
 
+let peer: MockPeerConnection
+
 class MockPeerConnection {
   connectionState = 'new'
   localDescription: RTCSessionDescriptionInit | null = null
@@ -28,6 +30,10 @@ class MockPeerConnection {
   createDataChannel = vi.fn(() => ({ close: vi.fn(), onerror: null }))
   createOffer = vi.fn(async () => ({ type: 'offer', sdp: 'offer-sdp' }))
 
+  constructor() {
+    peer = this
+  }
+
   setLocalDescription = vi.fn(async (description) => {
     this.localDescription = description
   })
@@ -36,16 +42,7 @@ class MockPeerConnection {
   close = vi.fn()
 }
 
-let peer: MockPeerConnection
-
-class MockRTCPeerConnection {
-  constructor() {
-    peer = new MockPeerConnection()
-    return peer as unknown as MockRTCPeerConnection
-  }
-}
-
-vi.stubGlobal('RTCPeerConnection', MockRTCPeerConnection)
+vi.stubGlobal('RTCPeerConnection', MockPeerConnection)
 
 const track = { stop: vi.fn(), enabled: true }
 const stream = {
@@ -141,5 +138,6 @@ describe('usePatientRealtimeVoice', () => {
     expect(track.enabled).toBe(false)
     voice.setMuted(false)
     expect(track.enabled).toBe(true)
+    expect(peer).toBeInstanceOf(MockPeerConnection)
   })
 })
