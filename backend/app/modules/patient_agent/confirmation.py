@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from jose import JWTError, jwt
 
@@ -25,6 +25,7 @@ def create_appointment_confirmation_token(
     payload = {
         "type": "patient_confirmation",
         "purpose": _CONFIRMATION_PURPOSE,
+        "jti": uuid4().hex,
         "clinic_id": str(clinic_id),
         "patient_id": str(patient_id),
         "professional_id": str(professional_id),
@@ -51,6 +52,8 @@ def decode_appointment_confirmation_token(
         payload.get("type") != "patient_confirmation"
         or payload.get("purpose") != _CONFIRMATION_PURPOSE
     ):
+        raise ValueError("Invalid appointment confirmation token")
+    if not isinstance(payload.get("jti"), str) or not payload["jti"]:
         raise ValueError("Invalid appointment confirmation token")
     if payload.get("clinic_id") != str(clinic_id) or payload.get("patient_id") != str(patient_id):
         raise PermissionError("Confirmation token scope mismatch")
