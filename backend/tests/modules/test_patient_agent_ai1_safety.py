@@ -58,10 +58,14 @@ async def _configure_open_monday(
     test_clinic: Clinic,
 ) -> ClinicMembership:
     membership = (
-        await db_session.execute(
-            select(ClinicMembership).where(ClinicMembership.clinic_id == test_clinic.id)
+        (
+            await db_session.execute(
+                select(ClinicMembership).where(ClinicMembership.clinic_id == test_clinic.id)
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     assert membership is not None
     membership.is_professional = True
     weekly = ClinicWeeklySchedule(clinic_id=test_clinic.id)
