@@ -20,7 +20,7 @@ class PatientAgentSession(Base, TimestampMixin):
     patient_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
-    channel: Mapped[str] = mapped_column(String(20), nullable=False)  # text|voice|video
+    channel: Mapped[str] = mapped_column(String(20), nullable=False)  # text|voice
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="created")
     provider: Mapped[str | None] = mapped_column(String(40), nullable=True)
     provider_session_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -77,4 +77,21 @@ class PatientAgentAuditEvent(Base):
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+
+
+class PatientAgentAppointmentProposal(Base):
+    __tablename__ = "patient_agent_appointment_proposals"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    jti: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    clinic_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    patient_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    professional_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
