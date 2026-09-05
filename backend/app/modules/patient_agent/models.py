@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -99,3 +99,41 @@ class PatientAgentAppointmentProposal(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class PatientAgentDentalKnowledge(Base, TimestampMixin):
+    __tablename__ = "patient_agent_dental_knowledge"
+    __table_args__ = (
+        UniqueConstraint(
+            "clinic_id",
+            "entry_key",
+            "version",
+            name="uq_patient_agent_dental_knowledge_clinic_entry_version",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    clinic_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clinics.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    entry_key: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    topic: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    locale: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    source_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_reference: Mapped[str] = mapped_column(Text, nullable=False)
+    source_metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    review_status: Mapped[str] = mapped_column(String(24), nullable=False, default="draft", index=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    clinically_reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    approved_for_patient_education: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    submitted_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
