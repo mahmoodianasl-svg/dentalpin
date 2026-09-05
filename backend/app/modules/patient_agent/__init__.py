@@ -18,6 +18,7 @@ from .models import (
     PatientAgentConsent,
     PatientAgentDentalKnowledge,
     PatientAgentSession,
+    PatientPortalAccount,
 )
 from .router import router
 
@@ -61,6 +62,7 @@ class PatientAgentModule(BaseModule):
 
     def get_models(self) -> list:
         return [
+            PatientPortalAccount,
             PatientAgentSession,
             PatientAgentConsent,
             PatientAgentAuditEvent,
