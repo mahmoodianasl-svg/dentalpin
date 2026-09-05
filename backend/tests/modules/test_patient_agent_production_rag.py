@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
@@ -10,6 +11,8 @@ from app.modules.patient_agent.dental_conversation import DentalKnowledgeEntry, 
 from app.modules.patient_agent.identity import PatientPrincipal
 from app.modules.patient_agent.router import patient_dental_knowledge_search
 from app.modules.patient_agent.schemas import PatientDentalKnowledgeSearchRequest
+
+router_module = importlib.import_module("app.modules.patient_agent.router")
 
 
 def _principal() -> PatientPrincipal:
@@ -33,12 +36,7 @@ async def test_patient_knowledge_search_returns_provenance_and_patient_education
             captured["clinic_id"] = clinic_id
 
         async def search(self, *, query, locale, topic, limit):  # noqa: ANN001
-            captured.update(
-                query=query,
-                locale=locale,
-                topic=topic,
-                limit=limit,
-            )
+            captured.update(query=query, locale=locale, topic=topic, limit=limit)
             return (
                 DentalKnowledgeEntry(
                     entry_id="implant-basics:v2",
@@ -52,10 +50,7 @@ async def test_patient_knowledge_search_returns_provenance_and_patient_education
                 ),
             )
 
-    monkeypatch.setattr(
-        "app.modules.patient_agent.router.DatabaseDentalKnowledgeRetriever",
-        FakeRetriever,
-    )
+    monkeypatch.setattr(router_module, "DatabaseDentalKnowledgeRetriever", FakeRetriever)
     db = SimpleNamespace()
 
     response = await patient_dental_knowledge_search(
@@ -93,10 +88,7 @@ async def test_patient_knowledge_search_requires_safe_fallback_when_no_approved_
             del query, locale, topic, limit
             return ()
 
-    monkeypatch.setattr(
-        "app.modules.patient_agent.router.DatabaseDentalKnowledgeRetriever",
-        EmptyRetriever,
-    )
+    monkeypatch.setattr(router_module, "DatabaseDentalKnowledgeRetriever", EmptyRetriever)
 
     response = await patient_dental_knowledge_search(
         PatientDentalKnowledgeSearchRequest(query="unknown dental question"),
