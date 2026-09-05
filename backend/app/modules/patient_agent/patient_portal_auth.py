@@ -66,7 +66,11 @@ async def authenticate_patient_portal_account(
             func.lower(PatientPortalAccount.email) == normalized_email,
         )
     )
-    if account is None or not account.is_active or not verify_password(password, account.password_hash):
+    if (
+        account is None
+        or not account.is_active
+        or not verify_password(password, account.password_hash)
+    ):
         raise ValueError("Invalid portal credentials")
 
     patient = await db.scalar(
