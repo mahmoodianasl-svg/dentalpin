@@ -101,16 +101,15 @@ async def test_database_retriever_preserves_lexical_suppression_and_limit() -> N
     )
     assert [entry.entry_id for entry in results] == ["implant-appointment:v1"]
 
-    assert await retriever.search(
-        query="root canal", locale="en", topic=DentalTopic.IMPLANTS
-    ) == ()
+    assert await retriever.search(query="root canal", locale="en", topic=DentalTopic.IMPLANTS) == ()
 
 
 async def test_database_retriever_does_not_query_for_nonpositive_limit() -> None:
     db = _db_with_rows((_row("implant"),))
     retriever = DatabaseDentalKnowledgeRetriever(db=db, clinic_id=uuid.uuid4())
 
-    assert await retriever.search(
-        query="implant", locale="en", topic=DentalTopic.IMPLANTS, limit=0
-    ) == ()
+    assert (
+        await retriever.search(query="implant", locale="en", topic=DentalTopic.IMPLANTS, limit=0)
+        == ()
+    )
     db.execute.assert_not_awaited()
