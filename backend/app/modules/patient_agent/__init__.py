@@ -12,6 +12,7 @@ from fastapi import APIRouter
 
 from app.core.plugins import BaseModule
 
+from .dental_knowledge_review_router import review_router
 from .models import (
     PatientAgentAuditEvent,
     PatientAgentConsent,
@@ -55,7 +56,10 @@ class PatientAgentModule(BaseModule):
         ]
 
     def get_router(self) -> APIRouter:
-        return router
+        combined = APIRouter()
+        combined.include_router(router)
+        combined.include_router(review_router)
+        return combined
 
     def get_permissions(self) -> list[str]:
         return [
