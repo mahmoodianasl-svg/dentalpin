@@ -39,15 +39,25 @@ def upgrade() -> None:
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("token_version", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("last_login_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.UniqueConstraint("clinic_id", "email", name="uq_patient_portal_accounts_clinic_email"),
         sa.UniqueConstraint("patient_id", name="uq_patient_portal_accounts_patient_id"),
     )
-    op.create_index("ix_patient_portal_accounts_clinic_id", "patient_portal_accounts", ["clinic_id"])
-    op.create_index("ix_patient_portal_accounts_patient_id", "patient_portal_accounts", ["patient_id"])
+    op.create_index(
+        "ix_patient_portal_accounts_clinic_id", "patient_portal_accounts", ["clinic_id"]
+    )
+    op.create_index(
+        "ix_patient_portal_accounts_patient_id", "patient_portal_accounts", ["patient_id"]
+    )
     op.create_index("ix_patient_portal_accounts_email", "patient_portal_accounts", ["email"])
-    op.create_index("ix_patient_portal_accounts_is_active", "patient_portal_accounts", ["is_active"])
+    op.create_index(
+        "ix_patient_portal_accounts_is_active", "patient_portal_accounts", ["is_active"]
+    )
 
 
 def downgrade() -> None:
