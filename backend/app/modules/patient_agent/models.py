@@ -125,7 +125,9 @@ class PatientAgentDentalKnowledge(Base, TimestampMixin):
     source_name: Mapped[str] = mapped_column(String(255), nullable=False)
     source_reference: Mapped[str] = mapped_column(Text, nullable=False)
     source_metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    review_status: Mapped[str] = mapped_column(String(24), nullable=False, default="draft", index=True)
+    review_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="draft", index=True
+    )
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     clinically_reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     approved_for_patient_education: Mapped[bool] = mapped_column(
