@@ -13,7 +13,9 @@ portal_router_module = importlib.import_module("app.modules.patient_agent.patien
 
 
 @pytest.mark.asyncio
-async def test_patient_portal_login_returns_patient_agent_token(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_patient_portal_login_returns_patient_agent_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     clinic_id = uuid4()
     patient_id = uuid4()
     account = SimpleNamespace(patient_id=patient_id, clinic_id=clinic_id)
