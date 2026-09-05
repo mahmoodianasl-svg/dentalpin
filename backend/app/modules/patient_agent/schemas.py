@@ -40,6 +40,33 @@ class FoundationStatus(BaseModel):
     )
 
 
+class PatientPortalEnrollmentRequest(BaseModel):
+    patient_id: UUID
+    email: str = Field(min_length=3, max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class PatientPortalAccountResponse(BaseModel):
+    patient_id: UUID
+    clinic_id: UUID
+    email: str
+    is_active: bool
+
+
+class PatientPortalLoginRequest(BaseModel):
+    clinic_id: UUID
+    email: str = Field(min_length=3, max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class PatientPortalLoginResponse(BaseModel):
+    patient_token: str
+    token_type: Literal["bearer"] = "bearer"
+    expires_in_seconds: int = 900
+    patient_id: UUID
+    clinic_id: UUID
+
+
 class RealtimeSessionCreate(BaseModel):
     channel: Literal["text", "voice"]
     locale: str | None = None
