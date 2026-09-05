@@ -37,8 +37,8 @@ export function usePatientPortalSession() {
   const apiBaseUrl = computed(() => config.public.apiBaseUrl)
   const isAuthenticated = computed(() => Boolean(
     patientToken.value
-      && expiresAt.value
-      && expiresAt.value > Date.now()
+        && expiresAt.value
+        && expiresAt.value > Date.now()
   ))
 
   function persist() {
