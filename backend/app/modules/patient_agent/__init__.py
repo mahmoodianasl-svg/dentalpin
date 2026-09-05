@@ -20,6 +20,7 @@ from .models import (
     PatientAgentSession,
     PatientPortalAccount,
 )
+from .patient_portal_router import portal_router
 from .router import router
 
 
@@ -72,6 +73,7 @@ class PatientAgentModule(BaseModule):
     def get_router(self) -> APIRouter:
         combined = APIRouter()
         combined.include_router(router)
+        combined.include_router(portal_router)
         combined.include_router(review_router)
         return combined
 
