@@ -22,7 +22,10 @@ class PatientPortalAccount(Base, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("clinics.id", ondelete="CASCADE"), nullable=False, index=True
     )
     patient_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("patients.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("patients.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -38,7 +41,9 @@ class PatientAgentSession(Base, TimestampMixin):
     clinic_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("clinics.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    patient_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    patient_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
     channel: Mapped[str] = mapped_column(String(20), nullable=False)  # text|voice
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="created")
     provider: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -55,15 +60,22 @@ class PatientAgentConsent(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("patient_agent_sessions.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True),
+        ForeignKey("patient_agent_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     clinic_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    patient_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    patient_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
     consent_type: Mapped[str] = mapped_column(String(40), nullable=False)
     granted: Mapped[bool] = mapped_column(Boolean, nullable=False)
     policy_version: Mapped[str] = mapped_column(String(40), nullable=False)
     evidence: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class PatientAgentAuditEvent(Base):
@@ -71,16 +83,23 @@ class PatientAgentAuditEvent(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("patient_agent_sessions.id", ondelete="SET NULL"), nullable=True, index=True
+        UUID(as_uuid=True),
+        ForeignKey("patient_agent_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     clinic_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    patient_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    patient_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
     event_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     actor_type: Mapped[str] = mapped_column(String(24), nullable=False)
     outcome: Mapped[str] = mapped_column(String(24), nullable=False, default="recorded")
     detail: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
 
 
 class PatientAgentAppointmentProposal(Base):
@@ -90,18 +109,29 @@ class PatientAgentAppointmentProposal(Base):
     jti: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     clinic_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     patient_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    professional_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    professional_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
+    )
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class PatientAgentDentalKnowledge(Base, TimestampMixin):
     __tablename__ = "patient_agent_dental_knowledge"
     __table_args__ = (
-        UniqueConstraint("clinic_id", "entry_key", "version", name="uq_patient_agent_dental_knowledge_clinic_entry_version"),
+        UniqueConstraint(
+            "clinic_id",
+            "entry_key",
+            "version",
+            name="uq_patient_agent_dental_knowledge_clinic_entry_version",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -117,10 +147,14 @@ class PatientAgentDentalKnowledge(Base, TimestampMixin):
     source_name: Mapped[str] = mapped_column(String(255), nullable=False)
     source_reference: Mapped[str] = mapped_column(Text, nullable=False)
     source_metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    review_status: Mapped[str] = mapped_column(String(24), nullable=False, default="draft", index=True)
+    review_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="draft", index=True
+    )
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     clinically_reviewed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    approved_for_patient_education: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    approved_for_patient_education: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
     submitted_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
