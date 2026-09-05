@@ -21,7 +21,7 @@ Maintained by `backend/scripts/generate_catalogs.py`. CI fails if a manifest cha
 | `migration_import` | 0.1.0 | official | patients, patients_clinical, clinical_notes, agenda, schedules, recalls, catalog, budget, odontogram, treatment_plan, billing, payments, media | manual | yes | 4 | 5 | 0 | yes |
 | `notifications` | 0.1.0 | official | patients, agenda, budget, billing, catalog | auto | no | 8 | 7 | 6 | yes |
 | `odontogram` | 0.3.0 | official | patients, catalog | auto | no | 4 | 7 | 0 | yes |
-| `patient_agent` | 0.1.0 | official | agenda, schedules | manual | yes | 6 | 0 | 0 | no |
+| `patient_agent` | 0.1.0 | official | agenda, schedules | manual | yes | 6 | 0 | 0 | yes |
 | `patient_timeline` | 0.1.0 | official | patients | auto | no | 1 | 0 | 35 | yes |
 | `patients` | 0.1.0 | official | — | auto | no | 2 | 3 | 0 | yes |
 | `patients_clinical` | 0.1.0 | official | patients | auto | no | 4 | 1 | 0 | yes |
@@ -325,7 +325,7 @@ Realtime patient AI foundation for text, voice, video and safe handoff.
 - **Category:** official
 - **Install policy:** installable=True · auto_install=False · removable=True
 - **Depends:** `agenda`, `schedules`
-- **Frontend layer:** —
+- **Frontend layer:** `frontend`
 - **Permissions:**
   - `patient_agent.audit.read`
   - `patient_agent.configure`
