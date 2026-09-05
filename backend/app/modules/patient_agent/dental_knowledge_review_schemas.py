@@ -25,6 +25,7 @@ class DentalKnowledgeReviewResponse(BaseModel):
     topic: str
     locale: str
     title: str
+    content: str
     source_name: str
     source_reference: str
     review_status: Literal["draft", "in_review", "approved", "rejected"]

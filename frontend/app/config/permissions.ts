@@ -144,5 +144,9 @@ export const PERMISSIONS = {
   accountingExport: {
     read: 'accounting_export.export.read',
     run: 'accounting_export.export.run'
+  },
+  patientAgent: {
+    knowledgeRead: 'patient_agent.knowledge.read',
+    knowledgeReview: 'patient_agent.knowledge.review'
   }
 } as const

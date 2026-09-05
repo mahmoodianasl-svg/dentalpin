@@ -45,6 +45,18 @@ class PatientAgentModule(BaseModule):
             ],
             "receptionist": ["session.read", "handoff.accept"],
         },
+        "frontend": {
+            "layer_path": "frontend",
+            "navigation": [
+                {
+                    "label": "nav.dentalKnowledge",
+                    "icon": "i-lucide-book-open-check",
+                    "to": "/ai/dental-knowledge",
+                    "permission": "patient_agent.knowledge.read",
+                    "order": 80,
+                },
+            ],
+        },
     }
 
     def get_models(self) -> list:
