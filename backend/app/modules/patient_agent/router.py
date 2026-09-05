@@ -17,6 +17,7 @@ from .confirmation import (
     create_appointment_confirmation_token,
     decode_appointment_confirmation_token,
 )
+from .dental_knowledge_persistence import DatabaseDentalKnowledgeRetriever
 from .dependencies import get_patient_principal
 from .identity import PatientPrincipal
 from .models import (
@@ -34,6 +35,9 @@ from .schemas import (
     AppointmentSlotResponse,
     FoundationStatus,
     HumanHandoffRequest,
+    PatientDentalKnowledgeSearchRequest,
+    PatientDentalKnowledgeSearchResponse,
+    PatientDentalKnowledgeSource,
     RealtimeSessionCreate,
     RealtimeSessionCreated,
 )
@@ -81,6 +85,42 @@ async def create_patient_realtime_session(
             provider=session.provider or "unknown",
             client_secret=client_secret,
             expires_at_epoch=expires_at,
+        )
+    )
+
+
+@router.post(
+    "/patient/knowledge/search",
+    response_model=ApiResponse[PatientDentalKnowledgeSearchResponse],
+)
+async def patient_dental_knowledge_search(
+    payload: PatientDentalKnowledgeSearchRequest,
+    principal: Annotated[PatientPrincipal, Depends(get_patient_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ApiResponse[PatientDentalKnowledgeSearchResponse]:
+    retriever = DatabaseDentalKnowledgeRetriever(db=db, clinic_id=principal.clinic_id)
+    entries = await retriever.search(
+        query=payload.query,
+        locale=payload.locale,
+        topic=payload.topic,
+        limit=payload.limit,
+    )
+    sources = [
+        PatientDentalKnowledgeSource(
+            entry_id=entry.entry_id,
+            topic=entry.topic,
+            title=entry.title,
+            content=entry.content,
+            source_name=entry.source_name,
+            source_reference=entry.source_reference,
+            locale=entry.locale,
+        )
+        for entry in entries
+    ]
+    return ApiResponse(
+        data=PatientDentalKnowledgeSearchResponse(
+            sources=sources,
+            fallback_required=not sources,
         )
     )
 

@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from .dental_conversation import DentalTopic
+
 
 class RealtimeCapabilities(BaseModel):
     text: bool = True
@@ -59,6 +61,29 @@ class RealtimeSessionCreated(BaseModel):
 class HumanHandoffRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
     urgency: Literal["routine", "soon", "urgent", "emergency_escalation"] = "routine"
+
+
+class PatientDentalKnowledgeSearchRequest(BaseModel):
+    query: str = Field(min_length=2, max_length=500)
+    locale: str = Field(default="en", min_length=2, max_length=16)
+    topic: DentalTopic | None = None
+    limit: int = Field(default=5, ge=1, le=5)
+
+
+class PatientDentalKnowledgeSource(BaseModel):
+    entry_id: str
+    topic: DentalTopic
+    title: str
+    content: str
+    source_name: str
+    source_reference: str
+    locale: str
+
+
+class PatientDentalKnowledgeSearchResponse(BaseModel):
+    sources: list[PatientDentalKnowledgeSource]
+    fallback_required: bool
+    patient_education_only: bool = True
 
 
 class AppointmentAvailabilityRequest(BaseModel):
