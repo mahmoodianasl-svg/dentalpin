@@ -12,7 +12,12 @@ from fastapi import APIRouter
 
 from app.core.plugins import BaseModule
 
-from .models import PatientAgentAuditEvent, PatientAgentConsent, PatientAgentSession
+from .models import (
+    PatientAgentAuditEvent,
+    PatientAgentConsent,
+    PatientAgentDentalKnowledge,
+    PatientAgentSession,
+)
 from .router import router
 
 
@@ -30,19 +35,37 @@ class PatientAgentModule(BaseModule):
         "removable": True,
         "role_permissions": {
             "admin": ["*"],
-            "dentist": ["session.read", "audit.read", "handoff.accept"],
+            "dentist": [
+                "session.read",
+                "audit.read",
+                "handoff.accept",
+                "knowledge.read",
+                "knowledge.review",
+            ],
             "receptionist": ["session.read", "handoff.accept"],
         },
     }
 
     def get_models(self) -> list:
-        return [PatientAgentSession, PatientAgentConsent, PatientAgentAuditEvent]
+        return [
+            PatientAgentSession,
+            PatientAgentConsent,
+            PatientAgentAuditEvent,
+            PatientAgentDentalKnowledge,
+        ]
 
     def get_router(self) -> APIRouter:
         return router
 
     def get_permissions(self) -> list[str]:
-        return ["session.read", "audit.read", "handoff.accept", "configure"]
+        return [
+            "session.read",
+            "audit.read",
+            "handoff.accept",
+            "configure",
+            "knowledge.read",
+            "knowledge.review",
+        ]
 
     def get_tools(self) -> list:
         return []
