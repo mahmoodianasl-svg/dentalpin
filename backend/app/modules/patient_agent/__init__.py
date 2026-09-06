@@ -18,7 +18,9 @@ from .models import (
     PatientAgentConsent,
     PatientAgentDentalKnowledge,
     PatientAgentSession,
+    PatientPortalAccount,
 )
+from .patient_portal_router import portal_router
 from .router import router
 
 
@@ -30,7 +32,7 @@ class PatientAgentModule(BaseModule):
         "author": "DentalPin Core Team",
         "license": "BSL-1.1",
         "category": "official",
-        "depends": ["agenda", "schedules"],
+        "depends": ["agenda", "schedules", "patients"],
         "installable": True,
         "auto_install": False,
         "removable": True,
@@ -61,6 +63,7 @@ class PatientAgentModule(BaseModule):
 
     def get_models(self) -> list:
         return [
+            PatientPortalAccount,
             PatientAgentSession,
             PatientAgentConsent,
             PatientAgentAuditEvent,
@@ -70,6 +73,7 @@ class PatientAgentModule(BaseModule):
     def get_router(self) -> APIRouter:
         combined = APIRouter()
         combined.include_router(router)
+        combined.include_router(portal_router)
         combined.include_router(review_router)
         return combined
 

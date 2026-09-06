@@ -35,6 +35,17 @@ RUN npm pack --ignore-scripts --silent undici@7.29.0 \
 
 FROM node:${NODE_VERSION}-${NODE_VARIANT}
 
+# Refresh only the affected Debian runtime library from Bookworm security.
+# CVE-2026-86145 is fixed in 10.42-1+deb12u1; assert the minimum version so a
+# stale mirror cannot silently produce an image that still fails the HIGH gate.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends --only-upgrade libpcre2-8-0; \
+    pcre2_version="$(dpkg-query -W -f='${Version}' libpcre2-8-0)"; \
+    dpkg --compare-versions "$pcre2_version" ge "10.42-1+deb12u1"; \
+    echo "libpcre2-8-0=$pcre2_version"; \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY --from=builder /app/.output /app/.output
