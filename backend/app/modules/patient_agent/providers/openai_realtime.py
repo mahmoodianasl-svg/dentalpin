@@ -10,6 +10,32 @@ import httpx
 from .base import RealtimeAIProvider, RealtimeSessionDescriptor, RealtimeSessionRequest
 
 
+PATIENT_KNOWLEDGE_TOOL = {
+    "type": "function",
+    "name": "search_patient_dental_knowledge",
+    "description": (
+        "Search DentalPin's clinic-approved patient education knowledge. Use this for dental "
+        "education questions before answering from general knowledge. This tool is read-only "
+        "and must not be used to diagnose, prescribe, approve treatment, or alter records."
+    ),
+    "parameters": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The patient's dental education question or search phrase.",
+            },
+            "topic": {
+                "type": ["string", "null"],
+                "description": "Optional DentalPin dental topic filter.",
+            },
+        },
+        "required": ["query"],
+    },
+}
+
+
 class OpenAIRealtimeProvider(RealtimeAIProvider):
     name = "openai"
 
@@ -29,9 +55,16 @@ class OpenAIRealtimeProvider(RealtimeAIProvider):
                 "modalities": list(request.modalities),
                 "instructions": (
                     "You are DentalPin's patient assistant. Never diagnose, prescribe, "
-                    "or claim to replace a dentist. Use DentalPin tools for patient-specific "
-                    "facts and escalate urgent or clinical decisions to a human professional."
+                    "or claim to replace a dentist. For dental education questions, call "
+                    "search_patient_dental_knowledge and ground the answer in the returned "
+                    "clinic-approved sources. If the tool returns fallback_required=true, say "
+                    "that approved clinic guidance was not found and recommend appropriate "
+                    "human follow-up rather than inventing clinical advice. Use DentalPin tools "
+                    "for patient-specific facts and escalate urgent or clinical decisions to a "
+                    "human professional."
                 ),
+                "tools": [PATIENT_KNOWLEDGE_TOOL],
+                "tool_choice": "auto",
                 "audio": {"output": {"voice": "marin"}},
             }
         }
