@@ -10,7 +10,10 @@ from app.modules.patient_agent.identity import (
     decode_patient_session_token,
 )
 from app.modules.patient_agent.providers.base import RealtimeSessionRequest
-from app.modules.patient_agent.providers.openai_realtime import OpenAIRealtimeProvider
+from app.modules.patient_agent.providers.openai_realtime import (
+    PATIENT_KNOWLEDGE_TOOL,
+    OpenAIRealtimeProvider,
+)
 
 
 def test_patient_token_binds_patient_and_clinic() -> None:
@@ -41,6 +44,17 @@ async def test_realtime_provider_fails_closed_without_server_api_key() -> None:
                 modalities=("audio", "text"),
             )
         )
+
+
+def test_realtime_patient_knowledge_tool_is_read_only_and_strict() -> None:
+    assert PATIENT_KNOWLEDGE_TOOL["type"] == "function"
+    assert PATIENT_KNOWLEDGE_TOOL["name"] == "search_patient_dental_knowledge"
+    assert "read-only" in PATIENT_KNOWLEDGE_TOOL["description"]
+    parameters = PATIENT_KNOWLEDGE_TOOL["parameters"]
+    assert parameters["type"] == "object"
+    assert parameters["additionalProperties"] is False
+    assert parameters["required"] == ["query"]
+    assert set(parameters["properties"]) == {"query", "topic"}
 
 
 def test_patient_token_rejects_tampering() -> None:
