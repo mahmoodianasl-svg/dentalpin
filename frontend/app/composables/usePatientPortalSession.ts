@@ -35,11 +35,10 @@ export function usePatientPortalSession() {
   const isAuthenticating = ref(false)
 
   const apiBaseUrl = computed(() => config.public.apiBaseUrl)
-  const isAuthenticated = computed(() => Boolean(
-    patientToken.value
-        && expiresAt.value
-        && expiresAt.value > Date.now()
-  ))
+  const isAuthenticated = computed(() => {
+    if (!patientToken.value || !expiresAt.value) return false
+    return expiresAt.value > Date.now()
+  })
 
   function persist() {
     if (typeof window === 'undefined' || !patientToken.value || !patientId.value || !clinicId.value || !expiresAt.value) return
