@@ -32,7 +32,7 @@ class PatientAgentModule(BaseModule):
         "author": "DentalPin Core Team",
         "license": "BSL-1.1",
         "category": "official",
-        "depends": ["agenda", "schedules"],
+        "depends": ["agenda", "schedules", "patients"],
         "installable": True,
         "auto_install": False,
         "removable": True,
