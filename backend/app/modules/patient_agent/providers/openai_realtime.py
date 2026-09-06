@@ -7,7 +7,7 @@ import os
 
 import httpx
 
-from .base import (
+from app.modules.patient_agent.providers.base import (
     RealtimeAIProvider,
     RealtimeSessionDescriptor,
     RealtimeSessionRequest,
