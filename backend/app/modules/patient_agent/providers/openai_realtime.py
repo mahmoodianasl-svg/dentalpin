@@ -7,7 +7,11 @@ import os
 
 import httpx
 
-from .base import RealtimeAIProvider, RealtimeSessionDescriptor, RealtimeSessionRequest
+from .base import (
+    RealtimeAIProvider,
+    RealtimeSessionDescriptor,
+    RealtimeSessionRequest,
+)
 
 
 PATIENT_KNOWLEDGE_TOOL = {
