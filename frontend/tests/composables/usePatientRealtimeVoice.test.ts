@@ -166,7 +166,11 @@ describe('usePatientRealtimeVoice', () => {
         arguments: JSON.stringify({ query: 'How should I brush?', topic: 'preventive_care' })
       })
     } as MessageEvent<string>)
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(dataChannel.send).toHaveBeenCalledTimes(2)
+    })
 
     expect(fetchMock).toHaveBeenLastCalledWith(
       '/api/v1/patient_agent/patient/knowledge/search',
