@@ -8,6 +8,9 @@ const email = ref('')
 const password = ref('')
 const locale = ref('en')
 const consentAccepted = ref(false)
+const visualSnapshotConsentAccepted = ref(false)
+const snapshotInput = ref<HTMLInputElement | null>(null)
+const isSharingSnapshot = ref(false)
 const isBusy = computed(() => ['connecting', 'disconnecting'].includes(voice.status.value))
 
 async function signIn() {
@@ -23,14 +26,34 @@ async function startVoice() {
   if (!consentAccepted.value || !portal.patientToken.value) return
   await voice.connect({
     patientToken: portal.patientToken.value,
-    locale: locale.value || undefined
+    locale: locale.value || undefined,
+    visualSnapshotConsent: visualSnapshotConsentAccepted.value
   })
+}
+
+function chooseSnapshot() {
+  snapshotInput.value?.click()
+}
+
+async function shareSnapshot(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  isSharingSnapshot.value = true
+  try {
+    await voice.sendVisualSnapshot(file)
+  } finally {
+    isSharingSnapshot.value = false
+    input.value = ''
+  }
 }
 
 async function signOut() {
   if (voice.isConnected.value) await voice.disconnect()
   portal.logout()
   consentAccepted.value = false
+  visualSnapshotConsentAccepted.value = false
 }
 </script>
 
@@ -145,6 +168,12 @@ async function signOut() {
           :disabled="isBusy || voice.isConnected.value"
         />
 
+        <UCheckbox
+          v-model="visualSnapshotConsentAccepted"
+          label="Optional: I consent to sharing patient-selected PNG/JPEG images with the AI during this session. This does not enable continuous video or recording."
+          :disabled="isBusy || voice.isConnected.value"
+        />
+
         <div
           v-if="voice.errorMessage.value"
           class="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"
@@ -186,6 +215,34 @@ async function signOut() {
           <span class="text-sm text-muted">
             Status: {{ voice.status.value }}
           </span>
+        </div>
+
+        <div
+          v-if="voice.isConnected.value && voice.visualSnapshotConsentEnabled.value"
+          class="rounded-md border border-default p-4 space-y-2"
+        >
+          <p class="text-sm font-medium text-default">
+            Share a visual snapshot
+          </p>
+          <p class="text-xs text-muted">
+            Select a PNG or JPEG image for intake/education context. The AI must not diagnose, prescribe or approve treatment from the image.
+          </p>
+          <input
+            ref="snapshotInput"
+            type="file"
+            accept="image/png,image/jpeg"
+            class="hidden"
+            @change="shareSnapshot"
+          >
+          <UButton
+            icon="i-lucide-image-plus"
+            variant="soft"
+            :loading="isSharingSnapshot"
+            :disabled="isSharingSnapshot"
+            @click="chooseSnapshot"
+          >
+            Select image
+          </UButton>
         </div>
 
         <p
