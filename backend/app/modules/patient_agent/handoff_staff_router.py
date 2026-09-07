@@ -46,7 +46,9 @@ async def get_staff_handoff(
         session_id=session_id,
     )
     if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient handoff not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Patient handoff not found"
+        )
     return ApiResponse(data=_handoff_response(session))
 
 
