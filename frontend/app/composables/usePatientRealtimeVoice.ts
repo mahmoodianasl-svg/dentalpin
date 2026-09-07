@@ -12,6 +12,14 @@ interface RealtimeSessionCreated {
   expires_at_epoch: number | null
 }
 
+interface VisualSnapshotAuthorization {
+  snapshot_id: string
+  authorized: boolean
+  scope: 'visual_snapshot_only'
+  media_content_persisted: boolean
+  continuous_video: boolean
+}
+
 interface PatientDentalKnowledgeSource {
   entry_id: string
   topic: string
@@ -153,6 +161,27 @@ export function usePatientRealtimeVoice() {
     )
   }
 
+  async function authorizeVisualSnapshot(file: File) {
+    if (!activePatientToken || !sessionId.value) {
+      throw new Error('Patient session is not authenticated')
+    }
+
+    return await $fetch<ApiEnvelope<VisualSnapshotAuthorization>>(
+      `/api/v1/patient_agent/patient/sessions/${sessionId.value}/visual-snapshots/authorize`,
+      {
+        baseURL: apiBaseUrl.value,
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${activePatientToken}`
+        },
+        body: {
+          mime_type: file.type,
+          size_bytes: file.size
+        }
+      }
+    )
+  }
+
   function sendRealtimeEvent(event: Record<string, unknown>) {
     if (!dataChannel || dataChannel.readyState !== 'open') {
       throw new Error('Realtime event channel is not open')
@@ -189,6 +218,11 @@ export function usePatientRealtimeVoice() {
       }
       if (file.size <= 0 || file.size > MAX_VISUAL_SNAPSHOT_BYTES) {
         throw new Error('Visual snapshot must be between 1 byte and 5 MB')
+      }
+
+      const authorization = await authorizeVisualSnapshot(file)
+      if (!authorization.data.authorized) {
+        throw new Error('Visual snapshot sharing was not authorized')
       }
 
       const imageUrl = await readImageAsDataUrl(file)
