@@ -59,10 +59,14 @@ async def test_voice_session_persists_snapshot_scoped_visual_consent(
     )
 
     consents = (
-        await db_session.execute(
-            select(PatientAgentConsent).where(PatientAgentConsent.session_id == session.id)
+        (
+            await db_session.execute(
+                select(PatientAgentConsent).where(PatientAgentConsent.session_id == session.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     by_type = {consent.consent_type: consent for consent in consents}
 
     assert set(by_type) == {"ai", "audio", "video"}
