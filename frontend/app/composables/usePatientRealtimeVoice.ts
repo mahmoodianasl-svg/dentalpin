@@ -38,12 +38,15 @@ interface RealtimeFunctionCallDone {
 interface ConnectPatientVoiceOptions {
   patientToken: string
   locale?: string
+  visualSnapshotConsent?: boolean
 }
 
 const OPENAI_REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls'
 const PATIENT_KNOWLEDGE_TOOL = 'search_patient_dental_knowledge'
 const PATIENT_HANDOFF_TOOL = 'request_patient_human_handoff'
 const HANDOFF_URGENCIES = new Set(['routine', 'soon', 'urgent', 'emergency_escalation'])
+const VISUAL_SNAPSHOT_TYPES = new Set(['image/jpeg', 'image/png'])
+const MAX_VISUAL_SNAPSHOT_BYTES = 5 * 1024 * 1024
 
 export function usePatientRealtimeVoice() {
   const config = useRuntimeConfig()
@@ -51,6 +54,7 @@ export function usePatientRealtimeVoice() {
   const sessionId = ref<string | null>(null)
   const errorMessage = ref<string | null>(null)
   const isMuted = ref(false)
+  const visualSnapshotConsentEnabled = ref(false)
 
   let peerConnection: RTCPeerConnection | null = null
   let localStream: MediaStream | null = null
@@ -81,9 +85,14 @@ export function usePatientRealtimeVoice() {
     activePatientToken = null
     activeLocale = 'en'
     isMuted.value = false
+    visualSnapshotConsentEnabled.value = false
   }
 
-  async function mintSession(patientToken: string, locale?: string) {
+  async function mintSession(
+    patientToken: string,
+    locale?: string,
+    visualSnapshotConsent = false
+  ) {
     return await $fetch<ApiEnvelope<RealtimeSessionCreated>>(
       '/api/v1/patient_agent/patient/sessions',
       {
@@ -97,7 +106,7 @@ export function usePatientRealtimeVoice() {
           locale: locale || null,
           ai_consent: true,
           audio_consent: true,
-          video_consent: false
+          video_consent: visualSnapshotConsent
         }
       }
     )
@@ -149,6 +158,63 @@ export function usePatientRealtimeVoice() {
       throw new Error('Realtime event channel is not open')
     }
     dataChannel.send(JSON.stringify(event))
+  }
+
+  function readImageAsDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onerror = () => reject(new Error('Unable to read visual snapshot'))
+      reader.onload = () => {
+        if (typeof reader.result !== 'string') {
+          reject(new Error('Unable to read visual snapshot'))
+          return
+        }
+        resolve(reader.result)
+      }
+      reader.readAsDataURL(file)
+    })
+  }
+
+  async function sendVisualSnapshot(file: File) {
+    errorMessage.value = null
+    try {
+      if (!isConnected.value) {
+        throw new Error('Start the realtime voice session before sharing an image')
+      }
+      if (!visualSnapshotConsentEnabled.value) {
+        throw new Error('Visual snapshot consent was not granted for this session')
+      }
+      if (!VISUAL_SNAPSHOT_TYPES.has(file.type)) {
+        throw new Error('Visual snapshots must be PNG or JPEG images')
+      }
+      if (file.size <= 0 || file.size > MAX_VISUAL_SNAPSHOT_BYTES) {
+        throw new Error('Visual snapshot must be between 1 byte and 5 MB')
+      }
+
+      const imageUrl = await readImageAsDataUrl(file)
+      sendRealtimeEvent({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [
+            {
+              type: 'input_image',
+              image_url: imageUrl,
+              detail: 'auto'
+            },
+            {
+              type: 'input_text',
+              text: 'This patient-selected image is visual context for intake and education only. Do not diagnose, prescribe, approve treatment, or write clinical records from the image. Escalate clinical decisions or concerning findings to a qualified dental professional.'
+            }
+          ]
+        }
+      })
+      sendRealtimeEvent({ type: 'response.create' })
+    } catch (error: unknown) {
+      errorMessage.value = error instanceof Error ? error.message : 'Unable to share visual snapshot'
+      throw error
+    }
   }
 
   async function handleKnowledgeCall(event: RealtimeFunctionCallDone) {
@@ -286,7 +352,12 @@ export function usePatientRealtimeVoice() {
     try {
       activePatientToken = options.patientToken
       activeLocale = options.locale || 'en'
-      const minted = await mintSession(options.patientToken, options.locale)
+      visualSnapshotConsentEnabled.value = options.visualSnapshotConsent === true
+      const minted = await mintSession(
+        options.patientToken,
+        options.locale,
+        visualSnapshotConsentEnabled.value
+      )
       const descriptor = minted.data
       if (!descriptor.client_secret) {
         throw new Error('Realtime provider did not return a client secret')
@@ -378,9 +449,11 @@ export function usePatientRealtimeVoice() {
     sessionId: readonly(sessionId),
     errorMessage: readonly(errorMessage),
     isMuted: readonly(isMuted),
+    visualSnapshotConsentEnabled: readonly(visualSnapshotConsentEnabled),
     isConnected,
     connect,
     disconnect,
+    sendVisualSnapshot,
     setMuted,
     toggleMute
   }
