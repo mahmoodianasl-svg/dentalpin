@@ -42,6 +42,8 @@ interface ConnectPatientVoiceOptions {
 
 const OPENAI_REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls'
 const PATIENT_KNOWLEDGE_TOOL = 'search_patient_dental_knowledge'
+const PATIENT_HANDOFF_TOOL = 'request_patient_human_handoff'
+const HANDOFF_URGENCIES = new Set(['routine', 'soon', 'urgent', 'emergency_escalation'])
 
 export function usePatientRealtimeVoice() {
   const config = useRuntimeConfig()
@@ -124,6 +126,24 @@ export function usePatientRealtimeVoice() {
     )
   }
 
+  async function requestPatientHandoff(reason: string, urgency: string) {
+    if (!activePatientToken || !sessionId.value) {
+      throw new Error('Patient session is not authenticated')
+    }
+
+    return await $fetch<ApiEnvelope<{ session_id: string, handoff_state: string }>>(
+      `/api/v1/patient_agent/patient/sessions/${sessionId.value}/handoff`,
+      {
+        baseURL: apiBaseUrl.value,
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${activePatientToken}`
+        },
+        body: { reason, urgency }
+      }
+    )
+  }
+
   function sendRealtimeEvent(event: Record<string, unknown>) {
     if (!dataChannel || dataChannel.readyState !== 'open') {
       throw new Error('Realtime event channel is not open')
@@ -131,9 +151,7 @@ export function usePatientRealtimeVoice() {
     dataChannel.send(JSON.stringify(event))
   }
 
-  async function handleFunctionCall(event: RealtimeFunctionCallDone) {
-    if (event.name !== PATIENT_KNOWLEDGE_TOOL) return
-
+  async function handleKnowledgeCall(event: RealtimeFunctionCallDone) {
     let args: { query?: unknown, topic?: unknown }
     try {
       args = JSON.parse(event.arguments) as { query?: unknown, topic?: unknown }
@@ -171,6 +189,48 @@ export function usePatientRealtimeVoice() {
       }
     })
     sendRealtimeEvent({ type: 'response.create' })
+  }
+
+  async function handleHandoffCall(event: RealtimeFunctionCallDone) {
+    let args: { reason?: unknown, urgency?: unknown }
+    try {
+      args = JSON.parse(event.arguments) as { reason?: unknown, urgency?: unknown }
+    } catch {
+      args = {}
+    }
+
+    const reason = typeof args.reason === 'string' ? args.reason.trim() : ''
+    const urgency = typeof args.urgency === 'string' ? args.urgency : 'routine'
+
+    let output: { requested: boolean, handoff_state?: string, error?: string }
+    if (!reason || !HANDOFF_URGENCIES.has(urgency)) {
+      output = { requested: false, error: 'A factual handoff summary and valid urgency are required.' }
+    } else {
+      try {
+        const response = await requestPatientHandoff(reason, urgency)
+        output = { requested: true, handoff_state: response.data.handoff_state }
+      } catch {
+        output = { requested: false, error: 'Human handoff could not be requested.' }
+      }
+    }
+
+    sendRealtimeEvent({
+      type: 'conversation.item.create',
+      item: {
+        type: 'function_call_output',
+        call_id: event.call_id,
+        output: JSON.stringify(output)
+      }
+    })
+    sendRealtimeEvent({ type: 'response.create' })
+  }
+
+  async function handleFunctionCall(event: RealtimeFunctionCallDone) {
+    if (event.name === PATIENT_KNOWLEDGE_TOOL) {
+      await handleKnowledgeCall(event)
+    } else if (event.name === PATIENT_HANDOFF_TOOL) {
+      await handleHandoffCall(event)
+    }
   }
 
   async function handleRealtimeMessage(message: MessageEvent<string>) {
