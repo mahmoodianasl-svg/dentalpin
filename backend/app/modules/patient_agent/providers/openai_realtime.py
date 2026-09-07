@@ -38,6 +38,39 @@ PATIENT_KNOWLEDGE_TOOL = {
     },
 }
 
+PATIENT_HANDOFF_TOOL = {
+    "type": "function",
+    "name": "request_patient_human_handoff",
+    "description": (
+        "Request a human DentalPin handoff for this authenticated patient session. Use when the "
+        "patient asks for a person, a clinical decision is required, or urgent/emergency-risk "
+        "signals require escalation. This tool does not diagnose. The reason must be a concise, "
+        "factual handoff summary without speculative diagnoses."
+    ),
+    "parameters": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "reason": {
+                "type": "string",
+                "description": (
+                    "Concise factual session summary and reason for handoff; do not include a "
+                    "diagnosis or unsupported clinical conclusion."
+                ),
+            },
+            "urgency": {
+                "type": "string",
+                "enum": ["routine", "soon", "urgent", "emergency_escalation"],
+                "description": (
+                    "Escalation priority. emergency_escalation is for emergency-risk signals and "
+                    "must switch the conversation away from routine scheduling."
+                ),
+            },
+        },
+        "required": ["reason", "urgency"],
+    },
+}
+
 
 class OpenAIRealtimeProvider(RealtimeAIProvider):
     name = "openai"
@@ -62,11 +95,14 @@ class OpenAIRealtimeProvider(RealtimeAIProvider):
                     "search_patient_dental_knowledge and ground the answer in the returned "
                     "clinic-approved sources. If the tool returns fallback_required=true, say "
                     "that approved clinic guidance was not found and recommend appropriate "
-                    "human follow-up rather than inventing clinical advice. Use DentalPin tools "
-                    "for patient-specific facts and escalate urgent or clinical decisions to a "
-                    "human professional."
+                    "human follow-up rather than inventing clinical advice. Use "
+                    "request_patient_human_handoff when the patient asks for a person, when a "
+                    "clinical decision is needed, or when urgent/emergency-risk signals require "
+                    "escalation. For emergency_escalation, stop routine scheduling, make clear "
+                    "that this is not a diagnosis, and advise immediate appropriate emergency "
+                    "or urgent professional help according to local circumstances."
                 ),
-                "tools": [PATIENT_KNOWLEDGE_TOOL],
+                "tools": [PATIENT_KNOWLEDGE_TOOL, PATIENT_HANDOFF_TOOL],
                 "tool_choice": "auto",
                 "audio": {"output": {"voice": "marin"}},
             }
