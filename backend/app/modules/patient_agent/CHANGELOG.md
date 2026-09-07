@@ -6,6 +6,8 @@
 - Added patient-scoped appointment availability, signed confirmation tokens, and confirmation-only booking commits.
 - Added human handoff APIs and audit coverage.
 - Added clinic-scoped staff handoff queue, detail, and single-claim acceptance with staff audit evidence.
+- Added optional patient-selected PNG/JPEG visual snapshots to realtime voice sessions with explicit snapshot-scoped consent, while continuous video and recording remain disabled.
+- Visual snapshots are sent as realtime context only and remain subject to the patient-agent prohibition on autonomous diagnosis, prescribing, treatment approval, and clinical-record writes.
 - Declared `agenda` and `schedules` as explicit module dependencies for the patient scheduling adapter.
 - Refreshed the generated DentalPin module catalog after AI-1 dependency integration.
 
