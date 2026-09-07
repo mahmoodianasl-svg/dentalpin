@@ -126,9 +126,7 @@ async def authorize_patient_visual_snapshot(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
-    return ApiResponse(
-        data=VisualSnapshotShareAuthorization(snapshot_id=snapshot_id)
-    )
+    return ApiResponse(data=VisualSnapshotShareAuthorization(snapshot_id=snapshot_id))
 
 
 @router.post(
