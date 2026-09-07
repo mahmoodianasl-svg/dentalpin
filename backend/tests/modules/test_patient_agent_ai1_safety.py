@@ -25,8 +25,17 @@ from app.modules.patient_agent.models import (
     PatientAgentAuditEvent,
     PatientAgentSession,
 )
-from app.modules.patient_agent.providers.base import RealtimeAIProvider, RealtimeSessionRequest
+from app.modules.patient_agent.providers.base import (
+    RealtimeAIProvider,
+    RealtimeSessionDescriptor,
+    RealtimeSessionRequest,
+)
 from app.modules.patient_agent.router import request_patient_handoff
+from app.modules.patient_agent.runtime_controls import (
+    REALTIME_SESSION_START_LIMIT,
+    RealtimeSessionRateLimitExceeded,
+    enforce_realtime_session_start_limit,
+)
 from app.modules.patient_agent.schemas import HumanHandoffRequest, RealtimeSessionCreate
 from app.modules.patient_agent.service import PatientAgentService
 from app.modules.patient_agent.tools import AppointmentSlot
@@ -40,6 +49,21 @@ class FailingRealtimeProvider(RealtimeAIProvider):
     async def create_session(self, request: RealtimeSessionRequest):  # noqa: ANN201
         del request
         raise RuntimeError("provider unavailable")
+
+    async def close_session(self, provider_session_ref: str) -> None:
+        del provider_session_ref
+
+
+class SuccessfulRealtimeProvider(RealtimeAIProvider):
+    name = "test-provider"
+
+    async def create_session(self, request: RealtimeSessionRequest) -> RealtimeSessionDescriptor:
+        return RealtimeSessionDescriptor(
+            provider=self.name,
+            provider_session_ref=f"provider-{request.session_id}",
+            client_secret="ephemeral-test-secret",
+            expires_at_epoch=2_000_000_000,
+        )
 
     async def close_session(self, provider_session_ref: str) -> None:
         del provider_session_ref
@@ -122,6 +146,94 @@ async def test_voice_requires_audio_consent(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
+async def test_realtime_start_limit_is_patient_and_clinic_scoped_and_audited(
+    db_session: AsyncSession,
+    test_clinic: Clinic,
+    test_patient: Patient,
+) -> None:
+    now = datetime.now(UTC)
+    principal = _principal(clinic_id=test_clinic.id, patient_id=test_patient.id)
+    for index in range(REALTIME_SESSION_START_LIMIT):
+        db_session.add(
+            PatientAgentSession(
+                clinic_id=test_clinic.id,
+                patient_id=test_patient.id,
+                channel="voice",
+                status="failed" if index % 2 else "active",
+                authenticated=True,
+                created_at=now - timedelta(seconds=index),
+                updated_at=now - timedelta(seconds=index),
+            )
+        )
+    db_session.add(
+        PatientAgentSession(
+            clinic_id=test_clinic.id,
+            patient_id=uuid4(),
+            channel="voice",
+            status="active",
+            authenticated=True,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    await db_session.commit()
+
+    with pytest.raises(RealtimeSessionRateLimitExceeded) as exc_info:
+        await enforce_realtime_session_start_limit(
+            db=db_session,
+            principal=principal,
+            now=now,
+        )
+    assert exc_info.value.status_code == 429
+    assert int(exc_info.value.headers["Retry-After"]) >= 1
+
+    audit = (
+        await db_session.execute(
+            select(PatientAgentAuditEvent).where(
+                PatientAgentAuditEvent.event_type == "realtime_session_rate_limited",
+                PatientAgentAuditEvent.clinic_id == test_clinic.id,
+                PatientAgentAuditEvent.patient_id == test_patient.id,
+            )
+        )
+    ).scalar_one()
+    assert audit.outcome == "denied"
+    assert audit.detail["limit"] == REALTIME_SESSION_START_LIMIT
+    assert audit.detail["recent_attempts"] == REALTIME_SESSION_START_LIMIT
+
+
+@pytest.mark.asyncio
+async def test_successful_session_audits_provider_latency_without_secret(
+    db_session: AsyncSession,
+    test_clinic: Clinic,
+    test_patient: Patient,
+) -> None:
+    service = PatientAgentService(SuccessfulRealtimeProvider())
+    session, client_secret, _ = await service.start_session(
+        db=db_session,
+        principal=_principal(clinic_id=test_clinic.id, patient_id=test_patient.id),
+        channel="voice",
+        locale="en",
+        ai_consent=True,
+        audio_consent=True,
+        video_consent=False,
+    )
+    assert client_secret == "ephemeral-test-secret"
+
+    audit = (
+        await db_session.execute(
+            select(PatientAgentAuditEvent).where(
+                PatientAgentAuditEvent.session_id == session.id,
+                PatientAgentAuditEvent.event_type == "realtime_session_started",
+            )
+        )
+    ).scalar_one()
+    assert audit.detail["provider"] == "test-provider"
+    assert audit.detail["provider_latency_ms"] >= 0
+    assert "client_secret" not in audit.detail
+    assert "ephemeral-test-secret" not in str(audit.detail)
+
+
+@pytest.mark.asyncio
 async def test_provider_failure_persists_failed_session_and_audit(
     db_session: AsyncSession,
     test_clinic: Clinic,
@@ -160,6 +272,7 @@ async def test_provider_failure_persists_failed_session_and_audit(
     ).scalar_one()
     assert audit.outcome == "failure"
     assert audit.detail["provider_error"] == "RuntimeError"
+    assert audit.detail["provider_latency_ms"] >= 0
 
 
 def test_confirmation_token_has_jti_and_rejects_tampering() -> None:
