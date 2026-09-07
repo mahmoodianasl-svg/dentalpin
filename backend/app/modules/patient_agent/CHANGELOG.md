@@ -5,6 +5,7 @@
 - Added realtime provider session issuance with patient identity binding and short-lived client credentials.
 - Added patient-scoped appointment availability, signed confirmation tokens, and confirmation-only booking commits.
 - Added human handoff APIs and audit coverage.
+- Added clinic-scoped staff handoff queue, detail, and single-claim acceptance with staff audit evidence.
 - Declared `agenda` and `schedules` as explicit module dependencies for the patient scheduling adapter.
 - Refreshed the generated DentalPin module catalog after AI-1 dependency integration.
 
