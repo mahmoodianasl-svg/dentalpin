@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from time import monotonic
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .identity import PatientPrincipal
 from .models import PatientAgentAuditEvent, PatientAgentConsent, PatientAgentSession
 from .providers.base import RealtimeAIProvider, RealtimeSessionRequest
+from .runtime_controls import enforce_realtime_session_start_limit
 
 
 class PatientAgentService:
@@ -34,6 +36,8 @@ class PatientAgentService:
             raise ValueError("Unsupported patient-agent channel")
         if not required[channel]:
             raise ValueError("Required patient consent has not been granted")
+
+        await enforce_realtime_session_start_limit(db=db, principal=principal)
 
         session = PatientAgentSession(
             id=uuid4(),
@@ -64,6 +68,7 @@ class PatientAgentService:
             )
 
         modalities = ("text",) if channel == "text" else ("audio", "text")
+        provider_started_at = monotonic()
         try:
             descriptor = await self.provider.create_session(
                 RealtimeSessionRequest(
@@ -74,6 +79,7 @@ class PatientAgentService:
                 )
             )
         except Exception as exc:
+            provider_latency_ms = max(0, int((monotonic() - provider_started_at) * 1000))
             session.status = "failed"
             db.add(
                 PatientAgentAuditEvent(
@@ -83,13 +89,18 @@ class PatientAgentService:
                     event_type="realtime_session_failed",
                     actor_type="system",
                     outcome="failure",
-                    detail={"channel": channel, "provider_error": type(exc).__name__},
+                    detail={
+                        "channel": channel,
+                        "provider_error": type(exc).__name__,
+                        "provider_latency_ms": provider_latency_ms,
+                    },
                     reason="Realtime provider session could not be created",
                 )
             )
             await db.commit()
             raise RuntimeError("Realtime provider session failed") from exc
 
+        provider_latency_ms = max(0, int((monotonic() - provider_started_at) * 1000))
         session.status = "active"
         session.provider = descriptor.provider
         session.provider_session_ref = descriptor.provider_session_ref
@@ -101,7 +112,11 @@ class PatientAgentService:
                 event_type="realtime_session_started",
                 actor_type="patient",
                 outcome="success",
-                detail={"channel": channel, "provider": descriptor.provider},
+                detail={
+                    "channel": channel,
+                    "provider": descriptor.provider,
+                    "provider_latency_ms": provider_latency_ms,
+                },
             )
         )
         return session, descriptor.client_secret, descriptor.expires_at_epoch
