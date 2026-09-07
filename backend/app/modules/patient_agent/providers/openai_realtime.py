@@ -6,12 +6,12 @@ import hashlib
 import os
 
 import httpx
+
 from app.modules.patient_agent.providers.base import (
     RealtimeAIProvider,
     RealtimeSessionDescriptor,
     RealtimeSessionRequest,
 )
-
 
 PATIENT_KNOWLEDGE_TOOL = {
     "type": "function",
