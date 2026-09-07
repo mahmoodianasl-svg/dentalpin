@@ -51,10 +51,23 @@ class PatientAgentService:
         db.add(session)
         await db.flush()
 
-        consents = [("ai", ai_consent)]
+        consents: list[tuple[str, bool, dict[str, object]]] = [
+            ("ai", ai_consent, {"source": "patient_session"})
+        ]
         if channel == "voice":
-            consents.append(("audio", audio_consent))
-        for consent_type, granted in consents:
+            consents.append(("audio", audio_consent, {"source": "patient_session"}))
+            consents.append(
+                (
+                    "video",
+                    video_consent,
+                    {
+                        "source": "patient_session",
+                        "scope": "visual_snapshot_only",
+                        "continuous_video": False,
+                    },
+                )
+            )
+        for consent_type, granted, evidence in consents:
             db.add(
                 PatientAgentConsent(
                     session_id=session.id,
@@ -63,7 +76,7 @@ class PatientAgentService:
                     consent_type=consent_type,
                     granted=granted,
                     policy_version="patient-agent-safety-v1",
-                    evidence={"source": "patient_session"},
+                    evidence=evidence,
                 )
             )
 
