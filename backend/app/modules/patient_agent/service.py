@@ -132,16 +132,31 @@ class PatientAgentService:
     ) -> None:
         if session.clinic_id != principal.clinic_id or session.patient_id != principal.patient_id:
             raise PermissionError("Patient session scope mismatch")
-        session.handoff_state = "requested"
+
+        summary = reason.strip()
+        context = dict(session.context or {})
+        context["handoff_summary"] = summary
+        context["handoff_urgency"] = urgency
+        session.context = context
+        session.handoff_state = (
+            "emergency_escalation" if urgency == "emergency_escalation" else "requested"
+        )
         db.add(
             PatientAgentAuditEvent(
                 session_id=session.id,
                 clinic_id=principal.clinic_id,
                 patient_id=principal.patient_id,
-                event_type="human_handoff_requested",
+                event_type=(
+                    "emergency_escalation_requested"
+                    if urgency == "emergency_escalation"
+                    else "human_handoff_requested"
+                ),
                 actor_type="patient",
                 outcome="recorded",
-                detail={"urgency": urgency},
-                reason=reason,
+                detail={
+                    "urgency": urgency,
+                    "summary_preserved": True,
+                },
+                reason=summary,
             )
         )

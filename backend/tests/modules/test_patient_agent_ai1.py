@@ -11,6 +11,7 @@ from app.modules.patient_agent.identity import (
 )
 from app.modules.patient_agent.providers.base import RealtimeSessionRequest
 from app.modules.patient_agent.providers.openai_realtime import (
+    PATIENT_HANDOFF_TOOL,
     PATIENT_KNOWLEDGE_TOOL,
     OpenAIRealtimeProvider,
 )
@@ -55,6 +56,22 @@ def test_realtime_patient_knowledge_tool_is_read_only_and_strict() -> None:
     assert parameters["additionalProperties"] is False
     assert parameters["required"] == ["query"]
     assert set(parameters["properties"]) == {"query", "topic"}
+
+
+def test_realtime_patient_handoff_tool_is_strict_and_non_diagnostic() -> None:
+    assert PATIENT_HANDOFF_TOOL["type"] == "function"
+    assert PATIENT_HANDOFF_TOOL["name"] == "request_patient_human_handoff"
+    assert "does not diagnose" in PATIENT_HANDOFF_TOOL["description"]
+    parameters = PATIENT_HANDOFF_TOOL["parameters"]
+    assert parameters["type"] == "object"
+    assert parameters["additionalProperties"] is False
+    assert parameters["required"] == ["reason", "urgency"]
+    assert parameters["properties"]["urgency"]["enum"] == [
+        "routine",
+        "soon",
+        "urgent",
+        "emergency_escalation",
+    ]
 
 
 def test_patient_token_rejects_tampering() -> None:
