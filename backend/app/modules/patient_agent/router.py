@@ -296,4 +296,4 @@ async def request_patient_handoff(
         reason=payload.reason,
         urgency=payload.urgency,
     )
-    return ApiResponse(data={"session_id": str(session_id), "handoff_state": "requested"})
+    return ApiResponse(data={"session_id": str(session_id), "handoff_state": session.handoff_state})
