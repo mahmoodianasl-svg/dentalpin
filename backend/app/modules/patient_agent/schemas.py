@@ -85,6 +85,12 @@ class RealtimeSessionCreated(BaseModel):
     autonomous_clinical_writes: bool = False
 
 
+class RealtimeSessionEnded(BaseModel):
+    session_id: UUID
+    status: Literal["ended"] = "ended"
+    ended_at: datetime
+
+
 class VisualSnapshotShareRequest(BaseModel):
     mime_type: Literal["image/jpeg", "image/png"]
     size_bytes: int = Field(gt=0, le=5 * 1024 * 1024)
