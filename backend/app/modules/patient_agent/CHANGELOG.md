@@ -12,6 +12,7 @@
 - Added metadata-only audit evidence for visual snapshot attempts denied because snapshot-scoped consent is absent.
 - Committed consent-denied visual snapshot audit evidence before returning HTTP 403 so request rollback cannot erase the security event.
 - Added patient-scoped realtime session termination with lifecycle audit evidence and best-effort provider cleanup so ended sessions can no longer authorize visual snapshots.
+- Added patient-controlled mid-session visual snapshot consent revocation that keeps voice active, appends a denial consent event, serializes with snapshot preflight on the session row, and makes the latest video-consent event authoritative for future image sharing.
 - Visual snapshots are sent as realtime context only and remain subject to the patient-agent prohibition on autonomous diagnosis, prescribing, treatment approval, and clinical-record writes.
 - Raw snapshot content is not persisted by DentalPin; visual-share audit evidence contains only authorization metadata such as MIME type, byte size and an opaque snapshot ID.
 - Declared `agenda` and `schedules` as explicit module dependencies for the patient scheduling adapter.
