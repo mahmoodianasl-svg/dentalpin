@@ -116,9 +116,7 @@ async def end_patient_realtime_session(
 
     service = PatientAgentService(OpenAIRealtimeProvider())
     ended_at = await service.end_session(db=db, principal=principal, session=session)
-    return ApiResponse(
-        data=RealtimeSessionEnded(session_id=session.id, ended_at=ended_at)
-    )
+    return ApiResponse(data=RealtimeSessionEnded(session_id=session.id, ended_at=ended_at))
 
 
 @router.post(
