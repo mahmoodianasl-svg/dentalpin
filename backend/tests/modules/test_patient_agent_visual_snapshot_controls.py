@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
@@ -151,8 +152,6 @@ async def test_visual_snapshot_share_rejects_missing_consent_and_commits_denial_
             size_bytes=1024,
         )
 
-    # Model the request dependency's exception cleanup. The denial evidence must
-    # remain durable even if the surrounding request performs a rollback.
     await db_session.rollback()
 
     audit = (
@@ -174,6 +173,138 @@ async def test_visual_snapshot_share_rejects_missing_consent_and_commits_denial_
     }
     assert "image_url" not in audit.detail
     assert "base64" not in str(audit.detail).lower()
+
+
+@pytest.mark.asyncio
+async def test_visual_snapshot_consent_revocation_blocks_future_authorization(
+    db_session: AsyncSession,
+    test_clinic: Clinic,
+    test_patient: Patient,
+) -> None:
+    session = await _active_visual_session(
+        db_session=db_session,
+        test_clinic=test_clinic,
+        test_patient=test_patient,
+    )
+    principal = _principal(clinic_id=test_clinic.id, patient_id=test_patient.id)
+    service = PatientAgentService(SuccessfulRealtimeProvider())
+
+    await service.revoke_visual_snapshot_consent(
+        db=db_session,
+        principal=principal,
+        session=session,
+    )
+    await db_session.commit()
+
+    consents = (
+        (
+            await db_session.execute(
+                select(PatientAgentConsent)
+                .where(
+                    PatientAgentConsent.session_id == session.id,
+                    PatientAgentConsent.consent_type == "video",
+                )
+                .order_by(PatientAgentConsent.created_at, PatientAgentConsent.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [consent.granted for consent in consents] == [True, False]
+    assert consents[-1].evidence["revoked_mid_session"] is True
+
+    with pytest.raises(PermissionError, match="Visual snapshot consent"):
+        await service.authorize_visual_snapshot_share(
+            db=db_session,
+            principal=principal,
+            session=session,
+            mime_type="image/png",
+            size_bytes=1024,
+        )
+
+
+@pytest.mark.asyncio
+async def test_visual_snapshot_consent_revocation_is_idempotent_and_audited_once(
+    db_session: AsyncSession,
+    test_clinic: Clinic,
+    test_patient: Patient,
+) -> None:
+    session = await _active_visual_session(
+        db_session=db_session,
+        test_clinic=test_clinic,
+        test_patient=test_patient,
+    )
+    principal = _principal(clinic_id=test_clinic.id, patient_id=test_patient.id)
+    service = PatientAgentService(SuccessfulRealtimeProvider())
+
+    await service.revoke_visual_snapshot_consent(
+        db=db_session,
+        principal=principal,
+        session=session,
+    )
+    await db_session.commit()
+    await service.revoke_visual_snapshot_consent(
+        db=db_session,
+        principal=principal,
+        session=session,
+    )
+    await db_session.commit()
+
+    revoked_consents = (
+        (
+            await db_session.execute(
+                select(PatientAgentConsent).where(
+                    PatientAgentConsent.session_id == session.id,
+                    PatientAgentConsent.consent_type == "video",
+                    PatientAgentConsent.granted.is_(False),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    audits = (
+        (
+            await db_session.execute(
+                select(PatientAgentAuditEvent).where(
+                    PatientAgentAuditEvent.session_id == session.id,
+                    PatientAgentAuditEvent.event_type == "visual_snapshot_consent_revoked",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    assert len(revoked_consents) == 1
+    assert len(audits) == 1
+    assert audits[0].outcome == "recorded"
+    assert audits[0].detail == {
+        "scope": "visual_snapshot_only",
+        "media_content_persisted": False,
+        "continuous_video": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_visual_snapshot_consent_revocation_rejects_patient_scope_mismatch(
+    db_session: AsyncSession,
+    test_clinic: Clinic,
+    test_patient: Patient,
+) -> None:
+    session = await _active_visual_session(
+        db_session=db_session,
+        test_clinic=test_clinic,
+        test_patient=test_patient,
+    )
+    service = PatientAgentService(SuccessfulRealtimeProvider())
+
+    with pytest.raises(PermissionError, match="scope mismatch"):
+        await service.revoke_visual_snapshot_consent(
+            db=db_session,
+            principal=_principal(clinic_id=test_clinic.id, patient_id=uuid4()),
+            session=session,
+        )
 
 
 @pytest.mark.asyncio

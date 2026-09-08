@@ -123,6 +123,18 @@ function visualAuthorization() {
   }
 }
 
+function visualConsentRevoked() {
+  return {
+    data: {
+      session_id: 'session-1',
+      consent_type: 'video',
+      granted: false,
+      scope: 'visual_snapshot_only',
+      continuous_video: false
+    }
+  }
+}
+
 describe('usePatientRealtimeVoice', () => {
   beforeEach(() => {
     fetchMock.mockReset()
@@ -184,6 +196,42 @@ describe('usePatientRealtimeVoice', () => {
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith(expect.objectContaining({
       video: false
     }))
+  })
+
+  it('revokes visual snapshot consent through the patient endpoint and disables local sharing', async () => {
+    fetchMock
+      .mockResolvedValueOnce(mintedSession())
+      .mockResolvedValueOnce(visualConsentRevoked())
+
+    const voice = usePatientRealtimeVoice()
+    await voice.connect({ patientToken: 'patient-token', visualSnapshotConsent: true })
+    expect(voice.visualSnapshotConsentEnabled.value).toBe(true)
+
+    await voice.stopVisualSnapshotSharing()
+
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/v1/patient_agent/patient/sessions/session-1/visual-snapshot-consent/revoke',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer patient-token' }
+      })
+    )
+    expect(voice.visualSnapshotConsentEnabled.value).toBe(false)
+    expect(voice.isConnected.value).toBe(true)
+  })
+
+  it('keeps local visual snapshot consent enabled when revocation fails', async () => {
+    fetchMock
+      .mockResolvedValueOnce(mintedSession())
+      .mockRejectedValueOnce(new Error('revocation unavailable'))
+
+    const voice = usePatientRealtimeVoice()
+    await voice.connect({ patientToken: 'patient-token', visualSnapshotConsent: true })
+
+    await expect(voice.stopVisualSnapshotSharing()).rejects.toThrow('revocation unavailable')
+    expect(voice.visualSnapshotConsentEnabled.value).toBe(true)
+    expect(voice.errorMessage.value).toBe('revocation unavailable')
+    expect(voice.isConnected.value).toBe(true)
   })
 
   it('authorizes and sends a consented patient-selected image as realtime input_image context', async () => {

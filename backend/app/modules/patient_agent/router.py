@@ -41,6 +41,7 @@ from .schemas import (
     RealtimeSessionCreate,
     RealtimeSessionCreated,
     RealtimeSessionEnded,
+    VisualSnapshotConsentRevoked,
     VisualSnapshotShareAuthorization,
     VisualSnapshotShareRequest,
 )
@@ -117,6 +118,43 @@ async def end_patient_realtime_session(
     service = PatientAgentService(OpenAIRealtimeProvider())
     ended_at = await service.end_session(db=db, principal=principal, session=session)
     return ApiResponse(data=RealtimeSessionEnded(session_id=session.id, ended_at=ended_at))
+
+
+@router.post(
+    "/patient/sessions/{session_id}/visual-snapshot-consent/revoke",
+    response_model=ApiResponse[VisualSnapshotConsentRevoked],
+)
+async def revoke_patient_visual_snapshot_consent(
+    session_id: UUID,
+    principal: Annotated[PatientPrincipal, Depends(get_patient_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ApiResponse[VisualSnapshotConsentRevoked]:
+    result = await db.execute(
+        select(PatientAgentSession)
+        .where(
+            PatientAgentSession.id == session_id,
+            PatientAgentSession.clinic_id == principal.clinic_id,
+            PatientAgentSession.patient_id == principal.patient_id,
+        )
+        .with_for_update()
+    )
+    session = result.scalar_one_or_none()
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    service = PatientAgentService(OpenAIRealtimeProvider())
+    try:
+        await service.revoke_visual_snapshot_consent(
+            db=db,
+            principal=principal,
+            session=session,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return ApiResponse(data=VisualSnapshotConsentRevoked(session_id=session.id))
 
 
 @router.post(

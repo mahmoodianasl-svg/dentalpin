@@ -180,6 +180,71 @@ class PatientAgentService:
         await db.flush()
         return ended_at
 
+    async def revoke_visual_snapshot_consent(
+        self,
+        *,
+        db: AsyncSession,
+        principal: PatientPrincipal,
+        session: PatientAgentSession,
+    ) -> None:
+        if session.clinic_id != principal.clinic_id or session.patient_id != principal.patient_id:
+            raise PermissionError("Patient session scope mismatch")
+        if session.channel != "voice" or session.status != "active":
+            raise ValueError(
+                "Visual snapshot consent can only change during an active voice session"
+            )
+
+        latest_consent = (
+            await db.execute(
+                select(PatientAgentConsent)
+                .where(
+                    PatientAgentConsent.session_id == session.id,
+                    PatientAgentConsent.clinic_id == principal.clinic_id,
+                    PatientAgentConsent.patient_id == principal.patient_id,
+                    PatientAgentConsent.consent_type == "video",
+                )
+                .order_by(PatientAgentConsent.created_at.desc(), PatientAgentConsent.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+
+        if latest_consent is not None and latest_consent.granted is False:
+            return
+
+        db.add(
+            PatientAgentConsent(
+                session_id=session.id,
+                clinic_id=principal.clinic_id,
+                patient_id=principal.patient_id,
+                consent_type="video",
+                granted=False,
+                policy_version="patient-agent-safety-v1",
+                evidence={
+                    "source": "patient_session",
+                    "scope": "visual_snapshot_only",
+                    "continuous_video": False,
+                    "revoked_mid_session": True,
+                },
+            )
+        )
+        db.add(
+            PatientAgentAuditEvent(
+                session_id=session.id,
+                clinic_id=principal.clinic_id,
+                patient_id=principal.patient_id,
+                event_type="visual_snapshot_consent_revoked",
+                actor_type="patient",
+                outcome="recorded",
+                detail={
+                    "scope": "visual_snapshot_only",
+                    "media_content_persisted": False,
+                    "continuous_video": False,
+                },
+                reason="Patient revoked visual snapshot consent",
+            )
+        )
+        await db.flush()
+
     async def authorize_visual_snapshot_share(
         self,
         *,
@@ -196,16 +261,22 @@ class PatientAgentService:
 
         consent = (
             await db.execute(
-                select(PatientAgentConsent).where(
+                select(PatientAgentConsent)
+                .where(
                     PatientAgentConsent.session_id == session.id,
                     PatientAgentConsent.clinic_id == principal.clinic_id,
                     PatientAgentConsent.patient_id == principal.patient_id,
                     PatientAgentConsent.consent_type == "video",
-                    PatientAgentConsent.granted.is_(True),
                 )
+                .order_by(PatientAgentConsent.created_at.desc(), PatientAgentConsent.id.desc())
+                .limit(1)
             )
         ).scalar_one_or_none()
-        if consent is None or consent.evidence.get("scope") != "visual_snapshot_only":
+        if (
+            consent is None
+            or consent.granted is not True
+            or consent.evidence.get("scope") != "visual_snapshot_only"
+        ):
             db.add(
                 PatientAgentAuditEvent(
                     session_id=session.id,

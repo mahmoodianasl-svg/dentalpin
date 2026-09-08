@@ -11,6 +11,7 @@ const consentAccepted = ref(false)
 const visualSnapshotConsentAccepted = ref(false)
 const snapshotInput = ref<HTMLInputElement | null>(null)
 const isSharingSnapshot = ref(false)
+const isStoppingImageSharing = ref(false)
 const isBusy = computed(() => ['connecting', 'disconnecting'].includes(voice.status.value))
 
 async function signIn() {
@@ -46,6 +47,16 @@ async function shareSnapshot(event: Event) {
   } finally {
     isSharingSnapshot.value = false
     input.value = ''
+  }
+}
+
+async function stopImageSharing() {
+  isStoppingImageSharing.value = true
+  try {
+    await voice.stopVisualSnapshotSharing()
+    visualSnapshotConsentAccepted.value = false
+  } finally {
+    isStoppingImageSharing.value = false
   }
 }
 
@@ -234,15 +245,37 @@ async function signOut() {
             class="hidden"
             @change="shareSnapshot"
           >
-          <UButton
-            icon="i-lucide-image-plus"
-            variant="soft"
-            :loading="isSharingSnapshot"
-            :disabled="isSharingSnapshot"
-            @click="chooseSnapshot"
-          >
-            Select image
-          </UButton>
+          <div class="flex flex-wrap gap-2">
+            <UButton
+              icon="i-lucide-image-plus"
+              variant="soft"
+              :loading="isSharingSnapshot"
+              :disabled="isSharingSnapshot || isStoppingImageSharing"
+              @click="chooseSnapshot"
+            >
+              Select image
+            </UButton>
+            <UButton
+              icon="i-lucide-image-off"
+              color="warning"
+              variant="soft"
+              :loading="isStoppingImageSharing"
+              :disabled="isSharingSnapshot || isStoppingImageSharing"
+              @click="stopImageSharing"
+            >
+              Stop image sharing
+            </UButton>
+          </div>
+          <p class="text-xs text-muted">
+            Stopping image sharing keeps the voice session connected and blocks future image authorization for this session.
+          </p>
+        </div>
+
+        <div
+          v-else-if="voice.isConnected.value && !voice.visualSnapshotConsentEnabled.value"
+          class="rounded-md border border-default p-3 text-xs text-muted"
+        >
+          Image sharing is off for this voice session.
         </div>
 
         <p
