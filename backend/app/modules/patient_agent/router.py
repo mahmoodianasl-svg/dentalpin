@@ -40,6 +40,7 @@ from .schemas import (
     PatientDentalKnowledgeSource,
     RealtimeSessionCreate,
     RealtimeSessionCreated,
+    RealtimeSessionEnded,
     VisualSnapshotShareAuthorization,
     VisualSnapshotShareRequest,
 )
@@ -88,6 +89,35 @@ async def create_patient_realtime_session(
             client_secret=client_secret,
             expires_at_epoch=expires_at,
         )
+    )
+
+
+@router.post(
+    "/patient/sessions/{session_id}/end",
+    response_model=ApiResponse[RealtimeSessionEnded],
+)
+async def end_patient_realtime_session(
+    session_id: UUID,
+    principal: Annotated[PatientPrincipal, Depends(get_patient_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ApiResponse[RealtimeSessionEnded]:
+    result = await db.execute(
+        select(PatientAgentSession)
+        .where(
+            PatientAgentSession.id == session_id,
+            PatientAgentSession.clinic_id == principal.clinic_id,
+            PatientAgentSession.patient_id == principal.patient_id,
+        )
+        .with_for_update()
+    )
+    session = result.scalar_one_or_none()
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    service = PatientAgentService(OpenAIRealtimeProvider())
+    ended_at = await service.end_session(db=db, principal=principal, session=session)
+    return ApiResponse(
+        data=RealtimeSessionEnded(session_id=session.id, ended_at=ended_at)
     )
 
 
