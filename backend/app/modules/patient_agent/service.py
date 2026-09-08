@@ -183,7 +183,11 @@ class PatientAgentService:
                     reason="Visual snapshot consent was not granted for this session",
                 )
             )
-            await db.flush()
+            # Security-denial evidence must survive the HTTP exception raised by
+            # the route. The request-scoped DB dependency rolls back when an
+            # exception escapes, so commit this metadata-only audit explicitly
+            # before returning the denial.
+            await db.commit()
             raise PermissionError("Visual snapshot consent was not granted for this session")
 
         await enforce_visual_snapshot_share_limit(

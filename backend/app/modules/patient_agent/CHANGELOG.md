@@ -10,6 +10,7 @@
 - Added server-side visual snapshot share preflight with patient/session scope checks, persisted metadata-only audit evidence, and a rolling per-session share limit before provider delivery.
 - Serialized visual snapshot preflight on the scoped patient-agent session so concurrent authorization requests cannot race the rolling share limit.
 - Added metadata-only audit evidence for visual snapshot attempts denied because snapshot-scoped consent is absent.
+- Committed consent-denied visual snapshot audit evidence before returning HTTP 403 so request rollback cannot erase the security event.
 - Visual snapshots are sent as realtime context only and remain subject to the patient-agent prohibition on autonomous diagnosis, prescribing, treatment approval, and clinical-record writes.
 - Raw snapshot content is not persisted by DentalPin; visual-share audit evidence contains only authorization metadata such as MIME type, byte size and an opaque snapshot ID.
 - Declared `agenda` and `schedules` as explicit module dependencies for the patient scheduling adapter.
