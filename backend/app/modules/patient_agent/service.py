@@ -190,7 +190,9 @@ class PatientAgentService:
         if session.clinic_id != principal.clinic_id or session.patient_id != principal.patient_id:
             raise PermissionError("Patient session scope mismatch")
         if session.channel != "voice" or session.status != "active":
-            raise ValueError("Visual snapshot consent can only change during an active voice session")
+            raise ValueError(
+                "Visual snapshot consent can only change during an active voice session"
+            )
 
         latest_consent = (
             await db.execute(
