@@ -18,6 +18,14 @@ interface RealtimeSessionEnded {
   ended_at: string
 }
 
+interface VisualSnapshotConsentRevoked {
+  session_id: string
+  consent_type: 'video'
+  granted: false
+  scope: 'visual_snapshot_only'
+  continuous_video: false
+}
+
 interface VisualSnapshotAuthorization {
   snapshot_id: string
   authorized: boolean
@@ -201,6 +209,38 @@ export function usePatientRealtimeVoice() {
         }
       }
     )
+  }
+
+  async function stopVisualSnapshotSharing() {
+    errorMessage.value = null
+    if (!isConnected.value || !activePatientToken || !sessionId.value) {
+      const error = new Error('Start the realtime voice session before changing image sharing')
+      errorMessage.value = error.message
+      throw error
+    }
+    if (!visualSnapshotConsentEnabled.value) return
+
+    try {
+      const response = await $fetch<ApiEnvelope<VisualSnapshotConsentRevoked>>(
+        `/api/v1/patient_agent/patient/sessions/${sessionId.value}/visual-snapshot-consent/revoke`,
+        {
+          baseURL: apiBaseUrl.value,
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${activePatientToken}`
+          }
+        }
+      )
+      if (response.data.granted !== false || response.data.consent_type !== 'video') {
+        throw new Error('Visual snapshot consent revocation was not confirmed')
+      }
+      visualSnapshotConsentEnabled.value = false
+    } catch (error: unknown) {
+      errorMessage.value = error instanceof Error
+        ? error.message
+        : 'Unable to stop visual snapshot sharing'
+      throw error
+    }
   }
 
   function sendRealtimeEvent(event: Record<string, unknown>) {
@@ -518,6 +558,7 @@ export function usePatientRealtimeVoice() {
     connect,
     disconnect,
     sendVisualSnapshot,
+    stopVisualSnapshotSharing,
     setMuted,
     toggleMute
   }
