@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from time import monotonic
 from uuid import UUID, uuid4
 
@@ -137,6 +138,47 @@ class PatientAgentService:
             )
         )
         return session, descriptor.client_secret, descriptor.expires_at_epoch
+
+    async def end_session(
+        self,
+        *,
+        db: AsyncSession,
+        principal: PatientPrincipal,
+        session: PatientAgentSession,
+    ) -> datetime:
+        if session.clinic_id != principal.clinic_id or session.patient_id != principal.patient_id:
+            raise PermissionError("Patient session scope mismatch")
+        if session.status == "ended" and session.ended_at is not None:
+            return session.ended_at
+
+        ended_at = datetime.now(UTC)
+        provider_close_succeeded = True
+        if session.provider_session_ref:
+            try:
+                await self.provider.close_session(session.provider_session_ref)
+            except Exception:
+                provider_close_succeeded = False
+
+        session.status = "ended"
+        session.ended_at = ended_at
+        db.add(
+            PatientAgentAuditEvent(
+                session_id=session.id,
+                clinic_id=principal.clinic_id,
+                patient_id=principal.patient_id,
+                event_type="realtime_session_ended",
+                actor_type="patient",
+                outcome="success",
+                detail={
+                    "channel": session.channel,
+                    "provider": session.provider,
+                    "provider_close_succeeded": provider_close_succeeded,
+                },
+                reason="Patient ended realtime session",
+            )
+        )
+        await db.flush()
+        return ended_at
 
     async def authorize_visual_snapshot_share(
         self,
