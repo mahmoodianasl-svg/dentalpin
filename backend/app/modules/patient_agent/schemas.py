@@ -91,6 +91,14 @@ class RealtimeSessionEnded(BaseModel):
     ended_at: datetime
 
 
+class VisualSnapshotConsentRevoked(BaseModel):
+    session_id: UUID
+    consent_type: Literal["video"] = "video"
+    granted: Literal[False] = False
+    scope: Literal["visual_snapshot_only"] = "visual_snapshot_only"
+    continuous_video: bool = False
+
+
 class VisualSnapshotShareRequest(BaseModel):
     mime_type: Literal["image/jpeg", "image/png"]
     size_bytes: int = Field(gt=0, le=5 * 1024 * 1024)
