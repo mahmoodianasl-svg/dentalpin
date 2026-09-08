@@ -102,11 +102,13 @@ async def authorize_patient_visual_snapshot(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ApiResponse[VisualSnapshotShareAuthorization]:
     result = await db.execute(
-        select(PatientAgentSession).where(
+        select(PatientAgentSession)
+        .where(
             PatientAgentSession.id == session_id,
             PatientAgentSession.clinic_id == principal.clinic_id,
             PatientAgentSession.patient_id == principal.patient_id,
         )
+        .with_for_update()
     )
     session = result.scalar_one_or_none()
     if session is None:
