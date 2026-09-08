@@ -95,8 +95,8 @@ const nativeFetch = vi.fn(async () => ({
 }))
 vi.stubGlobal('fetch', nativeFetch)
 
-function mockMintSession() {
-  fetchMock.mockResolvedValue({
+function mintedSession() {
+  return {
     data: {
       session_id: 'session-1',
       channel: 'voice',
@@ -104,7 +104,23 @@ function mockMintSession() {
       client_secret: 'ephemeral-secret',
       expires_at_epoch: 123
     }
-  })
+  }
+}
+
+function mockMintSession() {
+  fetchMock.mockResolvedValue(mintedSession())
+}
+
+function visualAuthorization() {
+  return {
+    data: {
+      snapshot_id: 'snapshot-1',
+      authorized: true,
+      scope: 'visual_snapshot_only',
+      media_content_persisted: false,
+      continuous_video: false
+    }
+  }
 }
 
 describe('usePatientRealtimeVoice', () => {
@@ -170,8 +186,10 @@ describe('usePatientRealtimeVoice', () => {
     }))
   })
 
-  it('sends a consented patient-selected image as realtime input_image context', async () => {
-    mockMintSession()
+  it('authorizes and sends a consented patient-selected image as realtime input_image context', async () => {
+    fetchMock
+      .mockResolvedValueOnce(mintedSession())
+      .mockResolvedValueOnce(visualAuthorization())
 
     const voice = usePatientRealtimeVoice()
     await voice.connect({
@@ -187,6 +205,14 @@ describe('usePatientRealtimeVoice', () => {
     } as File
     await voice.sendVisualSnapshot(image)
 
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/v1/patient_agent/patient/sessions/session-1/visual-snapshots/authorize',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer patient-token' },
+        body: { mime_type: 'image/png', size_bytes: 1024 }
+      })
+    )
     expect(dataChannel.send).toHaveBeenCalledTimes(2)
     const createEvent = JSON.parse(dataChannel.send.mock.calls[0][0])
     expect(createEvent).toMatchObject({
@@ -203,6 +229,23 @@ describe('usePatientRealtimeVoice', () => {
     })
     expect(createEvent.item.content[1].text).toContain('Do not diagnose')
     expect(dataChannel.send).toHaveBeenLastCalledWith(JSON.stringify({ type: 'response.create' }))
+  })
+
+  it('does not send provider image events when server authorization fails', async () => {
+    fetchMock
+      .mockResolvedValueOnce(mintedSession())
+      .mockRejectedValueOnce(new Error('rate limited'))
+
+    const voice = usePatientRealtimeVoice()
+    await voice.connect({ patientToken: 'patient-token', visualSnapshotConsent: true })
+    dataChannel.send.mockReset()
+
+    await expect(voice.sendVisualSnapshot({
+      type: 'image/jpeg',
+      size: 512,
+      name: 'mouth.jpg'
+    } as File)).rejects.toThrow('rate limited')
+    expect(dataChannel.send).not.toHaveBeenCalled()
   })
 
   it('rejects visual snapshots when the session did not grant visual consent', async () => {
@@ -237,15 +280,7 @@ describe('usePatientRealtimeVoice', () => {
 
   it('bridges realtime dental knowledge calls through the authenticated patient endpoint', async () => {
     fetchMock
-      .mockResolvedValueOnce({
-        data: {
-          session_id: 'session-1',
-          channel: 'voice',
-          provider: 'openai',
-          client_secret: 'ephemeral-secret',
-          expires_at_epoch: 123
-        }
-      })
+      .mockResolvedValueOnce(mintedSession())
       .mockResolvedValueOnce({
         data: {
           sources: [{

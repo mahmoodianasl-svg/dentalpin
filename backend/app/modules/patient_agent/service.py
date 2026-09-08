@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 from time import monotonic
-from uuid import uuid4
+from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .identity import PatientPrincipal
 from .models import PatientAgentAuditEvent, PatientAgentConsent, PatientAgentSession
 from .providers.base import RealtimeAIProvider, RealtimeSessionRequest
-from .runtime_controls import enforce_realtime_session_start_limit
+from .runtime_controls import (
+    enforce_realtime_session_start_limit,
+    enforce_visual_snapshot_share_limit,
+)
 
 
 class PatientAgentService:
@@ -133,6 +137,62 @@ class PatientAgentService:
             )
         )
         return session, descriptor.client_secret, descriptor.expires_at_epoch
+
+    async def authorize_visual_snapshot_share(
+        self,
+        *,
+        db: AsyncSession,
+        principal: PatientPrincipal,
+        session: PatientAgentSession,
+        mime_type: str,
+        size_bytes: int,
+    ) -> UUID:
+        if session.clinic_id != principal.clinic_id or session.patient_id != principal.patient_id:
+            raise PermissionError("Patient session scope mismatch")
+        if session.channel != "voice" or session.status != "active":
+            raise ValueError("Visual snapshots require an active realtime voice session")
+
+        consent = (
+            await db.execute(
+                select(PatientAgentConsent).where(
+                    PatientAgentConsent.session_id == session.id,
+                    PatientAgentConsent.clinic_id == principal.clinic_id,
+                    PatientAgentConsent.patient_id == principal.patient_id,
+                    PatientAgentConsent.consent_type == "video",
+                    PatientAgentConsent.granted.is_(True),
+                )
+            )
+        ).scalar_one_or_none()
+        if consent is None or consent.evidence.get("scope") != "visual_snapshot_only":
+            raise PermissionError("Visual snapshot consent was not granted for this session")
+
+        await enforce_visual_snapshot_share_limit(
+            db=db,
+            principal=principal,
+            session_id=session.id,
+        )
+
+        snapshot_id = uuid4()
+        db.add(
+            PatientAgentAuditEvent(
+                session_id=session.id,
+                clinic_id=principal.clinic_id,
+                patient_id=principal.patient_id,
+                event_type="visual_snapshot_share_authorized",
+                actor_type="patient",
+                outcome="authorized",
+                detail={
+                    "snapshot_id": str(snapshot_id),
+                    "mime_type": mime_type,
+                    "size_bytes": size_bytes,
+                    "scope": "visual_snapshot_only",
+                    "media_content_persisted": False,
+                    "continuous_video": False,
+                },
+            )
+        )
+        await db.flush()
+        return snapshot_id
 
     async def request_handoff(
         self,

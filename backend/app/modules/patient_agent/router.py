@@ -40,6 +40,8 @@ from .schemas import (
     PatientDentalKnowledgeSource,
     RealtimeSessionCreate,
     RealtimeSessionCreated,
+    VisualSnapshotShareAuthorization,
+    VisualSnapshotShareRequest,
 )
 from .service import PatientAgentService
 from .tools import AppointmentSlot
@@ -87,6 +89,44 @@ async def create_patient_realtime_session(
             expires_at_epoch=expires_at,
         )
     )
+
+
+@router.post(
+    "/patient/sessions/{session_id}/visual-snapshots/authorize",
+    response_model=ApiResponse[VisualSnapshotShareAuthorization],
+)
+async def authorize_patient_visual_snapshot(
+    session_id: UUID,
+    payload: VisualSnapshotShareRequest,
+    principal: Annotated[PatientPrincipal, Depends(get_patient_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ApiResponse[VisualSnapshotShareAuthorization]:
+    result = await db.execute(
+        select(PatientAgentSession).where(
+            PatientAgentSession.id == session_id,
+            PatientAgentSession.clinic_id == principal.clinic_id,
+            PatientAgentSession.patient_id == principal.patient_id,
+        )
+    )
+    session = result.scalar_one_or_none()
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    service = PatientAgentService(OpenAIRealtimeProvider())
+    try:
+        snapshot_id = await service.authorize_visual_snapshot_share(
+            db=db,
+            principal=principal,
+            session=session,
+            mime_type=payload.mime_type,
+            size_bytes=payload.size_bytes,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return ApiResponse(data=VisualSnapshotShareAuthorization(snapshot_id=snapshot_id))
 
 
 @router.post(

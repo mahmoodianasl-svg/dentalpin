@@ -85,6 +85,19 @@ class RealtimeSessionCreated(BaseModel):
     autonomous_clinical_writes: bool = False
 
 
+class VisualSnapshotShareRequest(BaseModel):
+    mime_type: Literal["image/jpeg", "image/png"]
+    size_bytes: int = Field(gt=0, le=5 * 1024 * 1024)
+
+
+class VisualSnapshotShareAuthorization(BaseModel):
+    snapshot_id: UUID
+    authorized: bool = True
+    scope: Literal["visual_snapshot_only"] = "visual_snapshot_only"
+    media_content_persisted: bool = False
+    continuous_video: bool = False
+
+
 class HumanHandoffRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
     urgency: Literal["routine", "soon", "urgent", "emergency_escalation"] = "routine"
