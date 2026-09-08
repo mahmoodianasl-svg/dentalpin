@@ -164,6 +164,26 @@ class PatientAgentService:
             )
         ).scalar_one_or_none()
         if consent is None or consent.evidence.get("scope") != "visual_snapshot_only":
+            db.add(
+                PatientAgentAuditEvent(
+                    session_id=session.id,
+                    clinic_id=principal.clinic_id,
+                    patient_id=principal.patient_id,
+                    event_type="visual_snapshot_share_denied",
+                    actor_type="patient",
+                    outcome="denied",
+                    detail={
+                        "reason": "snapshot_consent_missing",
+                        "mime_type": mime_type,
+                        "size_bytes": size_bytes,
+                        "scope": "visual_snapshot_only",
+                        "media_content_persisted": False,
+                        "continuous_video": False,
+                    },
+                    reason="Visual snapshot consent was not granted for this session",
+                )
+            )
+            await db.flush()
             raise PermissionError("Visual snapshot consent was not granted for this session")
 
         await enforce_visual_snapshot_share_limit(
