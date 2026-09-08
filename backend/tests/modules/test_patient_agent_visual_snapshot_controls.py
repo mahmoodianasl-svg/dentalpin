@@ -129,7 +129,7 @@ async def test_visual_snapshot_share_requires_server_side_consent_and_audits_met
 
 
 @pytest.mark.asyncio
-async def test_visual_snapshot_share_rejects_missing_consent(
+async def test_visual_snapshot_share_rejects_missing_consent_and_audits_denial(
     db_session: AsyncSession,
     test_clinic: Clinic,
     test_patient: Patient,
@@ -150,6 +150,27 @@ async def test_visual_snapshot_share_rejects_missing_consent(
             mime_type="image/jpeg",
             size_bytes=1024,
         )
+    await db_session.commit()
+
+    audit = (
+        await db_session.execute(
+            select(PatientAgentAuditEvent).where(
+                PatientAgentAuditEvent.session_id == session.id,
+                PatientAgentAuditEvent.event_type == "visual_snapshot_share_denied",
+            )
+        )
+    ).scalar_one()
+    assert audit.outcome == "denied"
+    assert audit.detail == {
+        "reason": "snapshot_consent_missing",
+        "mime_type": "image/jpeg",
+        "size_bytes": 1024,
+        "scope": "visual_snapshot_only",
+        "media_content_persisted": False,
+        "continuous_video": False,
+    }
+    assert "image_url" not in audit.detail
+    assert "base64" not in str(audit.detail).lower()
 
 
 @pytest.mark.asyncio
