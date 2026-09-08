@@ -12,6 +12,12 @@ interface RealtimeSessionCreated {
   expires_at_epoch: number | null
 }
 
+interface RealtimeSessionEnded {
+  session_id: string
+  status: 'ended'
+  ended_at: string
+}
+
 interface VisualSnapshotAuthorization {
   snapshot_id: string
   authorized: boolean
@@ -115,6 +121,21 @@ export function usePatientRealtimeVoice() {
           ai_consent: true,
           audio_consent: true,
           video_consent: visualSnapshotConsent
+        }
+      }
+    )
+  }
+
+  async function endPatientSession() {
+    if (!activePatientToken || !sessionId.value) return
+
+    await $fetch<ApiEnvelope<RealtimeSessionEnded>>(
+      `/api/v1/patient_agent/patient/sessions/${sessionId.value}/end`,
+      {
+        baseURL: apiBaseUrl.value,
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${activePatientToken}`
         }
       }
     )
@@ -469,9 +490,18 @@ export function usePatientRealtimeVoice() {
   async function disconnect() {
     if (status.value === 'idle') return
     status.value = 'disconnecting'
-    cleanupMedia()
-    sessionId.value = null
-    status.value = 'idle'
+    errorMessage.value = null
+    try {
+      await endPatientSession()
+    } catch (error: unknown) {
+      errorMessage.value = error instanceof Error
+        ? error.message
+        : 'Unable to end realtime session cleanly'
+    } finally {
+      cleanupMedia()
+      sessionId.value = null
+      status.value = 'idle'
+    }
   }
 
   onBeforeUnmount(() => {
