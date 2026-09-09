@@ -1,18 +1,24 @@
 # Patient agent module
 
-Owns the disabled-by-default patient-facing realtime AI boundary: session state, consent evidence, audit events, provider abstraction and safety invariants for future text, voice, video and human handoff.
+Owns DentalPin's disabled-by-default patient-facing AI boundary: realtime session state, consent evidence, audit events, provider abstraction, reviewed dental knowledge, guarded appointment integration and human handoff.
 
 ## Public API
 
-- Routes mounted at `/api/v1/patient_agent/` when the module is installed.
-- `GET /foundation` — exposes the AI-0 capability/safety contract; permission `patient_agent.configure`.
-- AI-0 does not issue provider sessions and does not expose patient-facing realtime endpoints.
+Routes are mounted at `/api/v1/patient_agent/` when the module is installed. Current capabilities include:
+
+- `GET /foundation` — exposes the capability/safety contract; permission `patient_agent.configure`.
+- Patient-scoped realtime session creation and termination using short-lived provider session material.
+- Patient-controlled visual snapshot consent revocation and server-side snapshot-share authorization.
+- Patient dental-knowledge search over reviewed clinic-scoped content.
+- Patient appointment availability, proposal and explicit-confirmation booking flows.
+- Patient human-handoff requests plus clinic-scoped staff handoff review/acceptance routes.
+- Patient portal and dental-knowledge review routes registered by the module.
 
 ## Dependencies
 
-`manifest.depends = []`. The module does not import feature-module services directly. Future patient/appointment capabilities must be consumed through registered tools/contracts so caller authorization remains enforceable.
+`manifest.depends = ["agenda", "schedules", "patients"]`.
 
-The initial migration uses core `clinics.id`; patient references are deliberately stored as scoped identifiers in AI-0 rather than introducing a feature-module FK dependency.
+Cross-module behavior must stay behind DentalPin adapters/contracts and preserve the underlying authorization and confirmation rules. The AI must never receive arbitrary database access or bypass feature-module permissions.
 
 ## Permissions
 
@@ -20,36 +26,49 @@ The initial migration uses core `clinics.id`; patient references are deliberatel
 - `patient_agent.audit.read`
 - `patient_agent.handoff.accept`
 - `patient_agent.configure`
+- `patient_agent.knowledge.read`
+- `patient_agent.knowledge.review`
 
-## Tools exposed
+## Tools and integrations
 
-None in AI-0. Future tools must wrap existing DentalPin services and preserve their permission checks; the AI must never receive arbitrary database access.
+`get_tools()` currently exports no generic plugin tools. Patient-agent routes use explicit internal adapters/contracts for appointment and knowledge capabilities instead of exposing unrestricted feature-module services to the model.
 
 ## Events emitted
 
-None in AI-0.
+None currently declared as module events.
 
 ## Events consumed
 
-None in AI-0.
+None currently declared as module events.
 
 ## Lifecycle
 
 - `installable=True`
 - `auto_install=False`
 - `removable=True`
-- The module is intentionally opt-in so adding the code cannot alter existing v2.2.3 clinical behavior.
+- The module remains opt-in so installing the code does not silently change existing clinical workflows.
 - Migration branch label: `patient_agent` (`pag_*`).
+
+## Realtime and visual-snapshot boundary
+
+- Long-lived provider credentials remain server-side; clients receive only short-lived session material.
+- Realtime sessions are scoped to the authenticated clinic and patient.
+- Visual snapshots require explicit snapshot-scoped video consent plus a server-side authorization preflight.
+- Snapshot authorization is serialized on the scoped session to protect consent and rolling-share-limit checks from races.
+- Mid-session visual consent revocation keeps voice active while blocking future snapshot authorization.
+- The frontend also blocks programmatic snapshot sends while revocation is pending and re-checks consent state before provider delivery.
+- Raw snapshot bytes are not persisted by DentalPin; audit evidence is metadata-only (for example MIME type, byte size and opaque snapshot identifier).
+- Continuous video and recording are not enabled by snapshot consent.
 
 ## Gotchas / non-obvious invariants
 
 - Never autonomously diagnose, prescribe, approve treatment plans, alter clinical records, or finalize clinical notes.
 - Appointment creation/reschedule/cancellation and other sensitive writes require explicit patient confirmation; clinical writes additionally require authorized human approval.
 - AI/audio/video/recording consent are separate auditable decisions. Recording must never be inferred from microphone/camera consent.
-- Realtime provider credentials stay server-side. A client may receive only short-lived session material.
-- Every session/audit lookup must be scoped by clinic and, when a patient is authenticated, by that patient identity.
+- Every patient session, consent, audit and mutation lookup must be scoped by clinic and authenticated patient identity where applicable.
 - Human handoff must preserve the session summary and audit trail without granting the AI broader staff permissions.
-- Video is an intake/communication aid, not an autonomous diagnostic channel.
+- Video/snapshots are intake and communication aids, not autonomous diagnostic channels.
+- Knowledge surfaced to patients must remain within the reviewed/published knowledge boundary and preserve source attribution/fallback behavior.
 
 ## Related ADRs
 
