@@ -77,6 +77,7 @@ export function usePatientRealtimeVoice() {
   const errorMessage = ref<string | null>(null)
   const isMuted = ref(false)
   const visualSnapshotConsentEnabled = ref(false)
+  const isRevokingVisualSnapshotConsent = ref(false)
 
   let peerConnection: RTCPeerConnection | null = null
   let localStream: MediaStream | null = null
@@ -108,6 +109,7 @@ export function usePatientRealtimeVoice() {
     activeLocale = 'en'
     isMuted.value = false
     visualSnapshotConsentEnabled.value = false
+    isRevokingVisualSnapshotConsent.value = false
   }
 
   async function mintSession(
@@ -219,7 +221,13 @@ export function usePatientRealtimeVoice() {
       throw error
     }
     if (!visualSnapshotConsentEnabled.value) return
+    if (isRevokingVisualSnapshotConsent.value) {
+      const error = new Error('Visual snapshot consent revocation is already in progress')
+      errorMessage.value = error.message
+      throw error
+    }
 
+    isRevokingVisualSnapshotConsent.value = true
     try {
       const response = await $fetch<ApiEnvelope<VisualSnapshotConsentRevoked>>(
         `/api/v1/patient_agent/patient/sessions/${sessionId.value}/visual-snapshot-consent/revoke`,
@@ -240,6 +248,8 @@ export function usePatientRealtimeVoice() {
         ? error.message
         : 'Unable to stop visual snapshot sharing'
       throw error
+    } finally {
+      isRevokingVisualSnapshotConsent.value = false
     }
   }
 
@@ -265,15 +275,22 @@ export function usePatientRealtimeVoice() {
     })
   }
 
+  function ensureVisualSnapshotSharingActive() {
+    if (isRevokingVisualSnapshotConsent.value) {
+      throw new Error('Visual snapshot sharing is stopping for this session')
+    }
+    if (!visualSnapshotConsentEnabled.value) {
+      throw new Error('Visual snapshot consent was not granted for this session')
+    }
+  }
+
   async function sendVisualSnapshot(file: File) {
     errorMessage.value = null
     try {
       if (!isConnected.value) {
         throw new Error('Start the realtime voice session before sharing an image')
       }
-      if (!visualSnapshotConsentEnabled.value) {
-        throw new Error('Visual snapshot consent was not granted for this session')
-      }
+      ensureVisualSnapshotSharingActive()
       if (!VISUAL_SNAPSHOT_TYPES.has(file.type)) {
         throw new Error('Visual snapshots must be PNG or JPEG images')
       }
@@ -285,8 +302,10 @@ export function usePatientRealtimeVoice() {
       if (!authorization.data.authorized) {
         throw new Error('Visual snapshot sharing was not authorized')
       }
+      ensureVisualSnapshotSharingActive()
 
       const imageUrl = await readImageAsDataUrl(file)
+      ensureVisualSnapshotSharingActive()
       sendRealtimeEvent({
         type: 'conversation.item.create',
         item: {
@@ -554,6 +573,7 @@ export function usePatientRealtimeVoice() {
     errorMessage: readonly(errorMessage),
     isMuted: readonly(isMuted),
     visualSnapshotConsentEnabled: readonly(visualSnapshotConsentEnabled),
+    isRevokingVisualSnapshotConsent: readonly(isRevokingVisualSnapshotConsent),
     isConnected,
     connect,
     disconnect,
