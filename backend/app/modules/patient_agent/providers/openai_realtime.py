@@ -25,27 +25,21 @@ PATIENT_KNOWLEDGE_TOOL = {
         "type": "object",
         "additionalProperties": False,
         "properties": {
-            "query": {
-                "type": "string",
-                "description": "The patient's dental education question or search phrase.",
-            },
-            "topic": {
-                "type": ["string", "null"],
-                "description": "Optional DentalPin dental topic filter.",
-            },
+            "query": {"type": "string"},
+            "topic": {"type": ["string", "null"]},
         },
         "required": ["query"],
     },
 }
 
-PATIENT_HANDOFF_TOOL = {
+PATIENT_INTAKE_RISK_TOOL = {
     "type": "function",
-    "name": "request_patient_human_handoff",
+    "name": "assess_patient_intake_risk",
     "description": (
-        "Request a human DentalPin handoff for this authenticated patient session. Use when the "
-        "patient asks for a person, a clinical decision is required, or urgent/emergency-risk "
-        "signals require escalation. This tool does not diagnose. The reason must be a concise, "
-        "factual handoff summary without speculative diagnoses."
+        "Submit factual structured intake signals to DentalPin for deterministic safety risk "
+        "classification. Use this whenever the patient reports pain, swelling, bleeding, fever "
+        "or systemic illness, trauma, breathing difficulty, swallowing difficulty, uncontrolled "
+        "bleeding, or facial/neck swelling. DentalPin derives urgency; do not diagnose."
     ),
     "parameters": {
         "type": "object",
@@ -53,21 +47,50 @@ PATIENT_HANDOFF_TOOL = {
         "properties": {
             "reason": {
                 "type": "string",
-                "description": (
-                    "Concise factual session summary and reason for handoff; do not include a "
-                    "diagnosis or unsupported clinical conclusion."
-                ),
+                "description": "Concise factual summary of what the patient reported.",
             },
-            "urgency": {
-                "type": "string",
-                "enum": ["routine", "soon", "urgent", "emergency_escalation"],
-                "description": (
-                    "Escalation priority. emergency_escalation is for emergency-risk signals and "
-                    "must switch the conversation away from routine scheduling."
-                ),
+            "signals": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": True,
+                "items": {
+                    "type": "string",
+                    "enum": [
+                        "pain",
+                        "swelling",
+                        "bleeding",
+                        "fever_or_systemic_illness",
+                        "trauma",
+                        "difficulty_breathing",
+                        "difficulty_swallowing",
+                        "uncontrolled_bleeding",
+                        "facial_or_neck_swelling",
+                    ],
+                },
             },
         },
-        "required": ["reason", "urgency"],
+        "required": ["reason", "signals"],
+    },
+}
+
+PATIENT_HANDOFF_TOOL = {
+    "type": "function",
+    "name": "request_patient_human_handoff",
+    "description": (
+        "Request a human DentalPin handoff when the patient asks for a person or a clinical "
+        "decision is needed. Urgency is not chosen by the model; DentalPin derives it from the "
+        "session's structured intake risk assessment."
+    ),
+    "parameters": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "reason": {
+                "type": "string",
+                "description": "Concise factual handoff summary without diagnosis.",
+            },
+        },
+        "required": ["reason"],
     },
 }
 
@@ -90,19 +113,23 @@ class OpenAIRealtimeProvider(RealtimeAIProvider):
                 "model": self.model,
                 "modalities": list(request.modalities),
                 "instructions": (
-                    "You are DentalPin's patient assistant. Never diagnose, prescribe, "
-                    "or claim to replace a dentist. For dental education questions, call "
-                    "search_patient_dental_knowledge and ground the answer in the returned "
-                    "clinic-approved sources. If the tool returns fallback_required=true, say "
-                    "that approved clinic guidance was not found and recommend appropriate "
-                    "human follow-up rather than inventing clinical advice. Use "
-                    "request_patient_human_handoff when the patient asks for a person, when a "
-                    "clinical decision is needed, or when urgent/emergency-risk signals require "
-                    "escalation. For emergency_escalation, stop routine scheduling, make clear "
-                    "that this is not a diagnosis, and advise immediate appropriate emergency "
-                    "or urgent professional help according to local circumstances."
+                    "You are DentalPin's patient assistant. Never diagnose, prescribe, or claim "
+                    "to replace a dentist. For dental education questions, call "
+                    "search_patient_dental_knowledge and ground the answer in clinic-approved "
+                    "sources. Whenever the patient reports an intake safety signal such as pain, "
+                    "swelling, bleeding, fever/systemic illness, trauma, breathing difficulty, "
+                    "swallowing difficulty, uncontrolled bleeding, or facial/neck swelling, call "
+                    "assess_patient_intake_risk with only the factual signals and summary. "
+                    "DentalPin, not the model, determines urgency. If the risk result requires "
+                    "handoff, stop routine scheduling and follow the returned escalation state. "
+                    "Use request_patient_human_handoff for direct requests for a person or when a "
+                    "clinical decision is needed; do not assign urgency yourself."
                 ),
-                "tools": [PATIENT_KNOWLEDGE_TOOL, PATIENT_HANDOFF_TOOL],
+                "tools": [
+                    PATIENT_KNOWLEDGE_TOOL,
+                    PATIENT_INTAKE_RISK_TOOL,
+                    PATIENT_HANDOFF_TOOL,
+                ],
                 "tool_choice": "auto",
                 "audio": {"output": {"voice": "marin"}},
             }
@@ -133,7 +160,4 @@ class OpenAIRealtimeProvider(RealtimeAIProvider):
         )
 
     async def close_session(self, provider_session_ref: str) -> None:
-        # Ephemeral WebRTC secrets expire quickly; provider-side explicit close is
-        # not required for the AI-1 token-minting flow. DentalPin still closes and
-        # audits its own session state.
         return None
