@@ -72,7 +72,7 @@ None currently declared as module events.
 
 ## Related ADRs
 
-- `docs/adr/0015-patient-agent-realtime-boundary.md` — realtime/WebRTC boundary, consent, safety, audit and human-control decisions.
+- `docs/adr/0015-realtime-patient-ai-agent.md` — realtime/WebRTC boundary, consent, safety, audit and human-control decisions.
 - `docs/adr/0001-modular-plugin-architecture.md` — module isolation and lifecycle.
 - `docs/adr/0002-per-module-alembic-branches.md` — isolated migration branch requirement.
 - `docs/adr/0003-event-bus-over-direct-imports.md` — cross-module integration rule.
