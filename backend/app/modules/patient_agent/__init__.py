@@ -1,9 +1,10 @@
-"""Patient-facing realtime AI agent foundation.
+"""Patient-facing realtime AI agent module.
 
-AI-0 deliberately ships disabled (``auto_install=False``). The module owns only
-patient-agent session/consent/audit state and consumes DentalPin capabilities
-through explicit tool contracts. It MUST NOT diagnose, prescribe, or commit
-clinical records autonomously.
+The module is opt-in (``auto_install=False``) and owns patient-agent session,
+consent, audit, reviewed knowledge, guarded appointment, human-handoff, and
+visual-snapshot authorization boundaries. It consumes DentalPin capabilities
+through explicit contracts and MUST NOT diagnose, prescribe, approve treatment,
+or commit clinical records autonomously.
 """
 
 from __future__ import annotations
