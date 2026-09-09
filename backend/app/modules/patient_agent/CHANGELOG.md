@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added server-side deterministic intake-risk assessment for structured patient safety signals; urgent and emergency-risk assessments automatically trigger human handoff, and an existing higher-risk session state cannot be downgraded by later lower-risk input.
+- Removed model-assigned handoff urgency from the realtime tool boundary; direct handoff requests now inherit DentalPin's server-derived session risk.
 - Added realtime provider session issuance with patient identity binding and short-lived client credentials.
 - Added patient-scoped appointment availability, signed confirmation tokens, and confirmation-only booking commits.
 - Added human handoff APIs and audit coverage.

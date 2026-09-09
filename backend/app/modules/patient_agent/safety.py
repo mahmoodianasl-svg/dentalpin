@@ -18,6 +18,14 @@ class AgentRiskLevel(StrEnum):
     EMERGENCY_ESCALATION = "emergency_escalation"
 
 
+RISK_PRIORITY = {
+    AgentRiskLevel.ROUTINE: 0,
+    AgentRiskLevel.SOON: 1,
+    AgentRiskLevel.URGENT: 2,
+    AgentRiskLevel.EMERGENCY_ESCALATION: 3,
+}
+
+
 AUTONOMOUSLY_FORBIDDEN = frozenset(
     {
         "diagnose",
@@ -49,3 +57,10 @@ def requires_human_approval(action: str) -> bool:
 
 def requires_patient_confirmation(action: str) -> bool:
     return action in CONFIRMATION_REQUIRED
+
+
+def highest_risk_level(*levels: AgentRiskLevel) -> AgentRiskLevel:
+    """Return the highest safety risk without allowing later downgrade."""
+    if not levels:
+        return AgentRiskLevel.ROUTINE
+    return max(levels, key=RISK_PRIORITY.__getitem__)

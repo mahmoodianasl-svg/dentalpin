@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from .dental_conversation import DentalTopic
+from .dental_conversation import DentalTopic, IntakeSignal
 
 
 class RealtimeCapabilities(BaseModel):
@@ -115,6 +115,19 @@ class VisualSnapshotShareAuthorization(BaseModel):
 class HumanHandoffRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
     urgency: Literal["routine", "soon", "urgent", "emergency_escalation"] = "routine"
+
+
+class IntakeRiskAssessmentRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=2000)
+    signals: list[IntakeSignal] = Field(min_length=1, max_length=9)
+
+
+class IntakeRiskAssessmentResponse(BaseModel):
+    session_id: UUID
+    urgency: Literal["routine", "soon", "urgent", "emergency_escalation"]
+    must_handoff: bool
+    handoff_state: str | None = None
+    diagnostic: Literal[False] = False
 
 
 class PatientDentalKnowledgeSearchRequest(BaseModel):
