@@ -102,6 +102,17 @@ URGENT_SIGNALS = frozenset(
 )
 
 
+def classify_intake_risk(signals: frozenset[IntakeSignal]) -> AgentRiskLevel:
+    """Classify structured intake signals without making a diagnosis."""
+    if signals & EMERGENCY_SIGNALS:
+        return AgentRiskLevel.EMERGENCY_ESCALATION
+    if signals & URGENT_SIGNALS:
+        return AgentRiskLevel.URGENT
+    if signals & {IntakeSignal.PAIN, IntakeSignal.SWELLING, IntakeSignal.BLEEDING}:
+        return AgentRiskLevel.SOON
+    return AgentRiskLevel.ROUTINE
+
+
 class DentalConversationPlanner:
     """Builds a safe dialogue plan from structured intake signals and curated RAG."""
 
@@ -109,16 +120,7 @@ class DentalConversationPlanner:
         self.retriever = retriever
 
     async def plan(self, context: DentalDialogueContext) -> DentalDialoguePlan:
-        signals = context.intake_signals
-        if signals & EMERGENCY_SIGNALS:
-            urgency = AgentRiskLevel.EMERGENCY_ESCALATION
-        elif signals & URGENT_SIGNALS:
-            urgency = AgentRiskLevel.URGENT
-        elif signals & {IntakeSignal.PAIN, IntakeSignal.SWELLING, IntakeSignal.BLEEDING}:
-            urgency = AgentRiskLevel.SOON
-        else:
-            urgency = AgentRiskLevel.ROUTINE
-
+        urgency = classify_intake_risk(context.intake_signals)
         knowledge = tuple(
             await self.retriever.search(
                 query=context.patient_message,
@@ -128,7 +130,7 @@ class DentalConversationPlanner:
             )
         )
 
-        questions = self._follow_up_questions(signals)
+        questions = self._follow_up_questions(context.intake_signals)
         return DentalDialoguePlan(
             urgency=urgency,
             answer_mode="education_and_intake",
