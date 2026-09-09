@@ -35,6 +35,8 @@ from .schemas import (
     AppointmentSlotResponse,
     FoundationStatus,
     HumanHandoffRequest,
+    IntakeRiskAssessmentRequest,
+    IntakeRiskAssessmentResponse,
     PatientDentalKnowledgeSearchRequest,
     PatientDentalKnowledgeSearchResponse,
     PatientDentalKnowledgeSource,
@@ -195,6 +197,52 @@ async def authorize_patient_visual_snapshot(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     return ApiResponse(data=VisualSnapshotShareAuthorization(snapshot_id=snapshot_id))
+
+
+@router.post(
+    "/patient/sessions/{session_id}/intake-risk/assess",
+    response_model=ApiResponse[IntakeRiskAssessmentResponse],
+)
+async def assess_patient_intake_risk(
+    session_id: UUID,
+    payload: IntakeRiskAssessmentRequest,
+    principal: Annotated[PatientPrincipal, Depends(get_patient_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ApiResponse[IntakeRiskAssessmentResponse]:
+    result = await db.execute(
+        select(PatientAgentSession)
+        .where(
+            PatientAgentSession.id == session_id,
+            PatientAgentSession.clinic_id == principal.clinic_id,
+            PatientAgentSession.patient_id == principal.patient_id,
+        )
+        .with_for_update()
+    )
+    session = result.scalar_one_or_none()
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    service = PatientAgentService(OpenAIRealtimeProvider())
+    try:
+        urgency = await service.assess_intake_risk(
+            db=db,
+            principal=principal,
+            session=session,
+            reason=payload.reason,
+            signals=frozenset(payload.signals),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    must_handoff = urgency.value in {"urgent", "emergency_escalation"}
+    return ApiResponse(
+        data=IntakeRiskAssessmentResponse(
+            session_id=session.id,
+            urgency=urgency.value,
+            must_handoff=must_handoff,
+            handoff_state=session.handoff_state,
+        )
+    )
 
 
 @router.post(
@@ -402,6 +450,5 @@ async def request_patient_handoff(
         principal=principal,
         session=session,
         reason=payload.reason,
-        urgency=payload.urgency,
     )
     return ApiResponse(data={"session_id": str(session_id), "handoff_state": session.handoff_state})
