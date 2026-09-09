@@ -114,6 +114,7 @@ class VisualSnapshotShareAuthorization(BaseModel):
 
 class HumanHandoffRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
+    urgency: Literal["routine", "soon", "urgent", "emergency_escalation"] = "routine"
 
 
 class IntakeRiskAssessmentRequest(BaseModel):

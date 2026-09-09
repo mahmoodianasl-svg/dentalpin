@@ -337,14 +337,20 @@ export function usePatientRealtimeVoice() {
 
   async function handleKnowledgeCall(event: RealtimeFunctionCallDone) {
     let args: { query?: unknown, topic?: unknown }
-    try { args = JSON.parse(event.arguments) as { query?: unknown, topic?: unknown } } catch { args = {} }
+    try {
+      args = JSON.parse(event.arguments) as { query?: unknown, topic?: unknown }
+    } catch {
+      args = {}
+    }
     const query = typeof args.query === 'string' ? args.query.trim() : ''
     const topic = typeof args.topic === 'string' ? args.topic : null
     let output: PatientDentalKnowledgeSearchResponse | { fallback_required: true, error: string }
     if (query.length < 2) {
       output = { fallback_required: true, error: 'A valid dental education query is required.' }
     } else {
-      try { output = (await searchPatientKnowledge(query, topic)).data } catch {
+      try {
+        output = (await searchPatientKnowledge(query, topic)).data
+      } catch {
         output = { fallback_required: true, error: 'Approved clinic knowledge could not be retrieved.' }
       }
     }
@@ -353,7 +359,11 @@ export function usePatientRealtimeVoice() {
 
   async function handleIntakeRiskCall(event: RealtimeFunctionCallDone) {
     let args: { reason?: unknown, signals?: unknown }
-    try { args = JSON.parse(event.arguments) as { reason?: unknown, signals?: unknown } } catch { args = {} }
+    try {
+      args = JSON.parse(event.arguments) as { reason?: unknown, signals?: unknown }
+    } catch {
+      args = {}
+    }
     const reason = typeof args.reason === 'string' ? args.reason.trim() : ''
     const signals = Array.isArray(args.signals)
       ? args.signals.filter((value): value is string => typeof value === 'string' && INTAKE_SIGNALS.has(value))
@@ -371,7 +381,11 @@ export function usePatientRealtimeVoice() {
 
   async function handleHandoffCall(event: RealtimeFunctionCallDone) {
     let args: { reason?: unknown }
-    try { args = JSON.parse(event.arguments) as { reason?: unknown } } catch { args = {} }
+    try {
+      args = JSON.parse(event.arguments) as { reason?: unknown }
+    } catch {
+      args = {}
+    }
     const reason = typeof args.reason === 'string' ? args.reason.trim() : ''
     if (!reason) {
       sendFunctionOutput(event.call_id, { requested: false, error: 'A factual handoff summary is required.' })
@@ -386,14 +400,22 @@ export function usePatientRealtimeVoice() {
   }
 
   async function handleFunctionCall(event: RealtimeFunctionCallDone) {
-    if (event.name === PATIENT_KNOWLEDGE_TOOL) await handleKnowledgeCall(event)
-    else if (event.name === PATIENT_INTAKE_RISK_TOOL) await handleIntakeRiskCall(event)
-    else if (event.name === PATIENT_HANDOFF_TOOL) await handleHandoffCall(event)
+    if (event.name === PATIENT_KNOWLEDGE_TOOL) {
+      await handleKnowledgeCall(event)
+    } else if (event.name === PATIENT_INTAKE_RISK_TOOL) {
+      await handleIntakeRiskCall(event)
+    } else if (event.name === PATIENT_HANDOFF_TOOL) {
+      await handleHandoffCall(event)
+    }
   }
 
   async function handleRealtimeMessage(message: MessageEvent<string>) {
     let event: unknown
-    try { event = JSON.parse(message.data) } catch { return }
+    try {
+      event = JSON.parse(message.data)
+    } catch {
+      return
+    }
     if (
       typeof event === 'object'
       && event !== null
@@ -439,25 +461,34 @@ export function usePatientRealtimeVoice() {
       document.body.appendChild(remoteAudio)
       peerConnection.ontrack = (event) => {
         const [stream] = event.streams
-        if (stream && remoteAudio) remoteAudio.srcObject = stream
+        if (stream && remoteAudio) {
+          remoteAudio.srcObject = stream
+        }
       }
       peerConnection.onconnectionstatechange = () => {
         if (!peerConnection) return
-        if (peerConnection.connectionState === 'connected') status.value = 'connected'
-        else if (['failed', 'disconnected', 'closed'].includes(peerConnection.connectionState)) {
+        if (peerConnection.connectionState === 'connected') {
+          status.value = 'connected'
+        } else if (['failed', 'disconnected', 'closed'].includes(peerConnection.connectionState)) {
           if (status.value !== 'disconnecting') {
             status.value = peerConnection.connectionState === 'failed' ? 'error' : 'idle'
           }
         }
       }
       dataChannel = peerConnection.createDataChannel('oai-events')
-      dataChannel.onmessage = (event) => { void handleRealtimeMessage(event) }
-      dataChannel.onerror = () => { errorMessage.value = 'Realtime event channel failed' }
+      dataChannel.onmessage = (event) => {
+        void handleRealtimeMessage(event)
+      }
+      dataChannel.onerror = () => {
+        errorMessage.value = 'Realtime event channel failed'
+      }
       localStream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         video: false
       })
-      for (const track of localStream.getAudioTracks()) peerConnection.addTrack(track, localStream)
+      for (const track of localStream.getAudioTracks()) {
+        peerConnection.addTrack(track, localStream)
+      }
       const offer = await peerConnection.createOffer()
       await peerConnection.setLocalDescription(offer)
       const answerSdp = await exchangeSdp(descriptor.client_secret, offer)
@@ -473,16 +504,22 @@ export function usePatientRealtimeVoice() {
 
   function setMuted(muted: boolean) {
     isMuted.value = muted
-    localStream?.getAudioTracks().forEach((track) => { track.enabled = !muted })
+    localStream?.getAudioTracks().forEach((track) => {
+      track.enabled = !muted
+    })
   }
 
-  function toggleMute() { setMuted(!isMuted.value) }
+  function toggleMute() {
+    setMuted(!isMuted.value)
+  }
 
   async function disconnect() {
     if (status.value === 'idle') return
     status.value = 'disconnecting'
     errorMessage.value = null
-    try { await endPatientSession() } catch (error: unknown) {
+    try {
+      await endPatientSession()
+    } catch (error: unknown) {
       errorMessage.value = error instanceof Error ? error.message : 'Unable to end realtime session cleanly'
     } finally {
       cleanupMedia()
@@ -491,7 +528,9 @@ export function usePatientRealtimeVoice() {
     }
   }
 
-  onBeforeUnmount(() => { cleanupMedia() })
+  onBeforeUnmount(() => {
+    cleanupMedia()
+  })
 
   return {
     status: readonly(status),

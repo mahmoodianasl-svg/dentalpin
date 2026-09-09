@@ -26,6 +26,7 @@ from .models import (
     PatientAgentSession,
 )
 from .providers.openai_realtime import OpenAIRealtimeProvider
+from .safety import AgentRiskLevel
 from .schemas import (
     AppointmentAvailabilityRequest,
     AppointmentConfirmedResponse,
@@ -450,5 +451,6 @@ async def request_patient_handoff(
         principal=principal,
         session=session,
         reason=payload.reason,
+        urgency=AgentRiskLevel(payload.urgency),
     )
     return ApiResponse(data={"session_id": str(session_id), "handoff_state": session.handoff_state})

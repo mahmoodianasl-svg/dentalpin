@@ -79,7 +79,7 @@ PATIENT_HANDOFF_TOOL = {
     "description": (
         "Request a human DentalPin handoff when the patient asks for a person or a clinical "
         "decision is needed. Urgency is not chosen by the model; DentalPin derives it from the "
-        "session's structured intake risk assessment."
+        "session's structured intake risk assessment. This tool does not diagnose."
     ),
     "parameters": {
         "type": "object",

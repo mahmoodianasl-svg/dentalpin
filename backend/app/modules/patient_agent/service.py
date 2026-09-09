@@ -346,7 +346,11 @@ class PatientAgentService:
         assessed = classify_intake_risk(signals)
         context = dict(session.context or {})
         prior_value = context.get("intake_risk")
-        prior = AgentRiskLevel(prior_value) if prior_value in AgentRiskLevel._value2member_map_ else AgentRiskLevel.ROUTINE
+        prior = (
+            AgentRiskLevel(prior_value)
+            if prior_value in AgentRiskLevel._value2member_map_
+            else AgentRiskLevel.ROUTINE
+        )
         effective = highest_risk_level(prior, assessed)
         context["intake_risk"] = effective.value
         context["intake_signals"] = sorted(signal.value for signal in signals)
@@ -388,6 +392,7 @@ class PatientAgentService:
         principal: PatientPrincipal,
         session: PatientAgentSession,
         reason: str,
+        urgency: AgentRiskLevel | None = None,
     ) -> None:
         if session.clinic_id != principal.clinic_id or session.patient_id != principal.patient_id:
             raise PermissionError("Patient session scope mismatch")
@@ -395,17 +400,22 @@ class PatientAgentService:
         summary = reason.strip()
         context = dict(session.context or {})
         risk_value = context.get("intake_risk")
-        urgency = (
+        server_urgency = (
             AgentRiskLevel(risk_value)
             if risk_value in AgentRiskLevel._value2member_map_
             else AgentRiskLevel.ROUTINE
         )
+        effective_urgency = (
+            highest_risk_level(server_urgency, urgency)
+            if urgency is not None
+            else server_urgency
+        )
         context["handoff_summary"] = summary
-        context["handoff_urgency"] = urgency.value
+        context["handoff_urgency"] = effective_urgency.value
         session.context = context
         session.handoff_state = (
             "emergency_escalation"
-            if urgency == AgentRiskLevel.EMERGENCY_ESCALATION
+            if effective_urgency == AgentRiskLevel.EMERGENCY_ESCALATION
             else "requested"
         )
         db.add(
@@ -415,13 +425,13 @@ class PatientAgentService:
                 patient_id=principal.patient_id,
                 event_type=(
                     "emergency_escalation_requested"
-                    if urgency == AgentRiskLevel.EMERGENCY_ESCALATION
+                    if effective_urgency == AgentRiskLevel.EMERGENCY_ESCALATION
                     else "human_handoff_requested"
                 ),
                 actor_type="patient",
                 outcome="recorded",
                 detail={
-                    "urgency": urgency.value,
+                    "urgency": effective_urgency.value,
                     "summary_preserved": True,
                     "server_derived_urgency": True,
                 },
