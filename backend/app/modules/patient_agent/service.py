@@ -406,9 +406,7 @@ class PatientAgentService:
             else AgentRiskLevel.ROUTINE
         )
         effective_urgency = (
-            highest_risk_level(server_urgency, urgency)
-            if urgency is not None
-            else server_urgency
+            highest_risk_level(server_urgency, urgency) if urgency is not None else server_urgency
         )
         context["handoff_summary"] = summary
         context["handoff_urgency"] = effective_urgency.value

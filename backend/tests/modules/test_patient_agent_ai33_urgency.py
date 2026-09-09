@@ -81,10 +81,16 @@ async def test_emergency_signal_is_server_classified_and_forces_handoff(
     assert session.handoff_state == "emergency_escalation"
 
     audits = (
-        await db_session.execute(
-            select(PatientAgentAuditEvent).where(PatientAgentAuditEvent.session_id == session.id)
+        (
+            await db_session.execute(
+                select(PatientAgentAuditEvent).where(
+                    PatientAgentAuditEvent.session_id == session.id
+                )
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert {audit.event_type for audit in audits} >= {
         "intake_risk_assessed",
         "emergency_escalation_requested",

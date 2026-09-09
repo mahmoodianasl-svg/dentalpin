@@ -65,13 +65,9 @@ def test_realtime_patient_handoff_tool_is_strict_and_non_diagnostic() -> None:
     parameters = PATIENT_HANDOFF_TOOL["parameters"]
     assert parameters["type"] == "object"
     assert parameters["additionalProperties"] is False
-    assert parameters["required"] == ["reason", "urgency"]
-    assert parameters["properties"]["urgency"]["enum"] == [
-        "routine",
-        "soon",
-        "urgent",
-        "emergency_escalation",
-    ]
+    assert parameters["required"] == ["reason"]
+    assert set(parameters["properties"]) == {"reason"}
+    assert "urgency" not in parameters["properties"]
 
 
 def test_patient_token_rejects_tampering() -> None:
