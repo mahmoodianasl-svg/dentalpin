@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .dental_conversation import IntakeSignal, classify_intake_risk
 from .identity import PatientPrincipal
 from .models import PatientAgentAuditEvent, PatientAgentConsent, PatientAgentSession
 from .providers.base import RealtimeAIProvider, RealtimeSessionRequest
@@ -16,6 +17,7 @@ from .runtime_controls import (
     enforce_realtime_session_start_limit,
     enforce_visual_snapshot_share_limit,
 )
+from .safety import AgentRiskLevel, highest_risk_level
 
 
 class PatientAgentService:
@@ -296,10 +298,6 @@ class PatientAgentService:
                     reason="Visual snapshot consent was not granted for this session",
                 )
             )
-            # Security-denial evidence must survive the HTTP exception raised by
-            # the route. The request-scoped DB dependency rolls back when an
-            # exception escapes, so commit this metadata-only audit explicitly
-            # before returning the denial.
             await db.commit()
             raise PermissionError("Visual snapshot consent was not granted for this session")
 
@@ -331,6 +329,58 @@ class PatientAgentService:
         await db.flush()
         return snapshot_id
 
+    async def assess_intake_risk(
+        self,
+        *,
+        db: AsyncSession,
+        principal: PatientPrincipal,
+        session: PatientAgentSession,
+        reason: str,
+        signals: frozenset[IntakeSignal],
+    ) -> AgentRiskLevel:
+        if session.clinic_id != principal.clinic_id or session.patient_id != principal.patient_id:
+            raise PermissionError("Patient session scope mismatch")
+        if session.status != "active":
+            raise ValueError("Intake risk can only be assessed for an active session")
+
+        assessed = classify_intake_risk(signals)
+        context = dict(session.context or {})
+        prior_value = context.get("intake_risk")
+        prior = AgentRiskLevel(prior_value) if prior_value in AgentRiskLevel._value2member_map_ else AgentRiskLevel.ROUTINE
+        effective = highest_risk_level(prior, assessed)
+        context["intake_risk"] = effective.value
+        context["intake_signals"] = sorted(signal.value for signal in signals)
+        session.context = context
+
+        db.add(
+            PatientAgentAuditEvent(
+                session_id=session.id,
+                clinic_id=principal.clinic_id,
+                patient_id=principal.patient_id,
+                event_type="intake_risk_assessed",
+                actor_type="system",
+                outcome="recorded",
+                detail={
+                    "assessed_urgency": assessed.value,
+                    "effective_urgency": effective.value,
+                    "signals": sorted(signal.value for signal in signals),
+                    "diagnostic": False,
+                },
+                reason=reason.strip(),
+            )
+        )
+
+        if effective in {AgentRiskLevel.URGENT, AgentRiskLevel.EMERGENCY_ESCALATION}:
+            await self.request_handoff(
+                db=db,
+                principal=principal,
+                session=session,
+                reason=reason,
+            )
+        else:
+            await db.flush()
+        return effective
+
     async def request_handoff(
         self,
         *,
@@ -338,18 +388,25 @@ class PatientAgentService:
         principal: PatientPrincipal,
         session: PatientAgentSession,
         reason: str,
-        urgency: str,
     ) -> None:
         if session.clinic_id != principal.clinic_id or session.patient_id != principal.patient_id:
             raise PermissionError("Patient session scope mismatch")
 
         summary = reason.strip()
         context = dict(session.context or {})
+        risk_value = context.get("intake_risk")
+        urgency = (
+            AgentRiskLevel(risk_value)
+            if risk_value in AgentRiskLevel._value2member_map_
+            else AgentRiskLevel.ROUTINE
+        )
         context["handoff_summary"] = summary
-        context["handoff_urgency"] = urgency
+        context["handoff_urgency"] = urgency.value
         session.context = context
         session.handoff_state = (
-            "emergency_escalation" if urgency == "emergency_escalation" else "requested"
+            "emergency_escalation"
+            if urgency == AgentRiskLevel.EMERGENCY_ESCALATION
+            else "requested"
         )
         db.add(
             PatientAgentAuditEvent(
@@ -358,15 +415,17 @@ class PatientAgentService:
                 patient_id=principal.patient_id,
                 event_type=(
                     "emergency_escalation_requested"
-                    if urgency == "emergency_escalation"
+                    if urgency == AgentRiskLevel.EMERGENCY_ESCALATION
                     else "human_handoff_requested"
                 ),
                 actor_type="patient",
                 outcome="recorded",
                 detail={
-                    "urgency": urgency,
+                    "urgency": urgency.value,
                     "summary_preserved": True,
+                    "server_derived_urgency": True,
                 },
                 reason=summary,
             )
         )
+        await db.flush()
