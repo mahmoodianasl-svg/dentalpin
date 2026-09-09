@@ -50,6 +50,14 @@ interface PatientDentalKnowledgeSearchResponse {
   patient_education_only: boolean
 }
 
+interface IntakeRiskAssessmentResponse {
+  session_id: string
+  urgency: 'routine' | 'soon' | 'urgent' | 'emergency_escalation'
+  must_handoff: boolean
+  handoff_state: string | null
+  diagnostic: false
+}
+
 interface RealtimeFunctionCallDone {
   type: 'response.function_call_arguments.done'
   call_id: string
@@ -65,8 +73,19 @@ interface ConnectPatientVoiceOptions {
 
 const OPENAI_REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls'
 const PATIENT_KNOWLEDGE_TOOL = 'search_patient_dental_knowledge'
+const PATIENT_INTAKE_RISK_TOOL = 'assess_patient_intake_risk'
 const PATIENT_HANDOFF_TOOL = 'request_patient_human_handoff'
-const HANDOFF_URGENCIES = new Set(['routine', 'soon', 'urgent', 'emergency_escalation'])
+const INTAKE_SIGNALS = new Set([
+  'pain',
+  'swelling',
+  'bleeding',
+  'fever_or_systemic_illness',
+  'trauma',
+  'difficulty_breathing',
+  'difficulty_swallowing',
+  'uncontrolled_bleeding',
+  'facial_or_neck_swelling'
+])
 const VISUAL_SNAPSHOT_TYPES = new Set(['image/jpeg', 'image/png'])
 const MAX_VISUAL_SNAPSHOT_BYTES = 5 * 1024 * 1024
 
@@ -122,9 +141,7 @@ export function usePatientRealtimeVoice() {
       {
         baseURL: apiBaseUrl.value,
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${patientToken}`
-        },
+        headers: { Authorization: `Bearer ${patientToken}` },
         body: {
           channel: 'voice',
           locale: locale || null,
@@ -138,56 +155,55 @@ export function usePatientRealtimeVoice() {
 
   async function endPatientSession() {
     if (!activePatientToken || !sessionId.value) return
-
     await $fetch<ApiEnvelope<RealtimeSessionEnded>>(
       `/api/v1/patient_agent/patient/sessions/${sessionId.value}/end`,
       {
         baseURL: apiBaseUrl.value,
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${activePatientToken}`
-        }
+        headers: { Authorization: `Bearer ${activePatientToken}` }
       }
     )
   }
 
   async function searchPatientKnowledge(query: string, topic?: string | null) {
-    if (!activePatientToken) {
-      throw new Error('Patient session is not authenticated')
-    }
-
+    if (!activePatientToken) throw new Error('Patient session is not authenticated')
     return await $fetch<ApiEnvelope<PatientDentalKnowledgeSearchResponse>>(
       '/api/v1/patient_agent/patient/knowledge/search',
       {
         baseURL: apiBaseUrl.value,
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${activePatientToken}`
-        },
-        body: {
-          query,
-          locale: activeLocale,
-          topic: topic || null,
-          limit: 5
-        }
+        headers: { Authorization: `Bearer ${activePatientToken}` },
+        body: { query, locale: activeLocale, topic: topic || null, limit: 5 }
       }
     )
   }
 
-  async function requestPatientHandoff(reason: string, urgency: string) {
+  async function assessPatientIntakeRisk(reason: string, signals: string[]) {
     if (!activePatientToken || !sessionId.value) {
       throw new Error('Patient session is not authenticated')
     }
+    return await $fetch<ApiEnvelope<IntakeRiskAssessmentResponse>>(
+      `/api/v1/patient_agent/patient/sessions/${sessionId.value}/intake-risk/assess`,
+      {
+        baseURL: apiBaseUrl.value,
+        method: 'POST',
+        headers: { Authorization: `Bearer ${activePatientToken}` },
+        body: { reason, signals }
+      }
+    )
+  }
 
+  async function requestPatientHandoff(reason: string) {
+    if (!activePatientToken || !sessionId.value) {
+      throw new Error('Patient session is not authenticated')
+    }
     return await $fetch<ApiEnvelope<{ session_id: string, handoff_state: string }>>(
       `/api/v1/patient_agent/patient/sessions/${sessionId.value}/handoff`,
       {
         baseURL: apiBaseUrl.value,
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${activePatientToken}`
-        },
-        body: { reason, urgency }
+        headers: { Authorization: `Bearer ${activePatientToken}` },
+        body: { reason }
       }
     )
   }
@@ -196,19 +212,13 @@ export function usePatientRealtimeVoice() {
     if (!activePatientToken || !sessionId.value) {
       throw new Error('Patient session is not authenticated')
     }
-
     return await $fetch<ApiEnvelope<VisualSnapshotAuthorization>>(
       `/api/v1/patient_agent/patient/sessions/${sessionId.value}/visual-snapshots/authorize`,
       {
         baseURL: apiBaseUrl.value,
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${activePatientToken}`
-        },
-        body: {
-          mime_type: file.type,
-          size_bytes: file.size
-        }
+        headers: { Authorization: `Bearer ${activePatientToken}` },
+        body: { mime_type: file.type, size_bytes: file.size }
       }
     )
   }
@@ -234,9 +244,7 @@ export function usePatientRealtimeVoice() {
         {
           baseURL: apiBaseUrl.value,
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${activePatientToken}`
-          }
+          headers: { Authorization: `Bearer ${activePatientToken}` }
         }
       )
       if (response.data.granted !== false || response.data.consent_type !== 'video') {
@@ -287,23 +295,15 @@ export function usePatientRealtimeVoice() {
   async function sendVisualSnapshot(file: File) {
     errorMessage.value = null
     try {
-      if (!isConnected.value) {
-        throw new Error('Start the realtime voice session before sharing an image')
-      }
+      if (!isConnected.value) throw new Error('Start the realtime voice session before sharing an image')
       ensureVisualSnapshotSharingActive()
-      if (!VISUAL_SNAPSHOT_TYPES.has(file.type)) {
-        throw new Error('Visual snapshots must be PNG or JPEG images')
-      }
+      if (!VISUAL_SNAPSHOT_TYPES.has(file.type)) throw new Error('Visual snapshots must be PNG or JPEG images')
       if (file.size <= 0 || file.size > MAX_VISUAL_SNAPSHOT_BYTES) {
         throw new Error('Visual snapshot must be between 1 byte and 5 MB')
       }
-
       const authorization = await authorizeVisualSnapshot(file)
-      if (!authorization.data.authorized) {
-        throw new Error('Visual snapshot sharing was not authorized')
-      }
+      if (!authorization.data.authorized) throw new Error('Visual snapshot sharing was not authorized')
       ensureVisualSnapshotSharingActive()
-
       const imageUrl = await readImageAsDataUrl(file)
       ensureVisualSnapshotSharingActive()
       sendRealtimeEvent({
@@ -312,11 +312,7 @@ export function usePatientRealtimeVoice() {
           type: 'message',
           role: 'user',
           content: [
-            {
-              type: 'input_image',
-              image_url: imageUrl,
-              detail: 'auto'
-            },
+            { type: 'input_image', image_url: imageUrl, detail: 'auto' },
             {
               type: 'input_text',
               text: 'This patient-selected image is visual context for intake and education only. Do not diagnose, prescribe, approve treatment, or write clinical records from the image. Escalate clinical decisions or concerning findings to a qualified dental professional.'
@@ -331,96 +327,73 @@ export function usePatientRealtimeVoice() {
     }
   }
 
-  async function handleKnowledgeCall(event: RealtimeFunctionCallDone) {
-    let args: { query?: unknown, topic?: unknown }
-    try {
-      args = JSON.parse(event.arguments) as { query?: unknown, topic?: unknown }
-    } catch {
-      args = {}
-    }
-
-    const query = typeof args.query === 'string' ? args.query.trim() : ''
-    const topic = typeof args.topic === 'string' ? args.topic : null
-
-    let output: PatientDentalKnowledgeSearchResponse | { fallback_required: true, error: string }
-    if (query.length < 2) {
-      output = {
-        fallback_required: true,
-        error: 'A valid dental education query is required.'
-      }
-    } else {
-      try {
-        const response = await searchPatientKnowledge(query, topic)
-        output = response.data
-      } catch {
-        output = {
-          fallback_required: true,
-          error: 'Approved clinic knowledge could not be retrieved.'
-        }
-      }
-    }
-
+  function sendFunctionOutput(callId: string, output: unknown) {
     sendRealtimeEvent({
       type: 'conversation.item.create',
-      item: {
-        type: 'function_call_output',
-        call_id: event.call_id,
-        output: JSON.stringify(output)
-      }
+      item: { type: 'function_call_output', call_id: callId, output: JSON.stringify(output) }
     })
     sendRealtimeEvent({ type: 'response.create' })
+  }
+
+  async function handleKnowledgeCall(event: RealtimeFunctionCallDone) {
+    let args: { query?: unknown, topic?: unknown }
+    try { args = JSON.parse(event.arguments) as { query?: unknown, topic?: unknown } } catch { args = {} }
+    const query = typeof args.query === 'string' ? args.query.trim() : ''
+    const topic = typeof args.topic === 'string' ? args.topic : null
+    let output: PatientDentalKnowledgeSearchResponse | { fallback_required: true, error: string }
+    if (query.length < 2) {
+      output = { fallback_required: true, error: 'A valid dental education query is required.' }
+    } else {
+      try { output = (await searchPatientKnowledge(query, topic)).data } catch {
+        output = { fallback_required: true, error: 'Approved clinic knowledge could not be retrieved.' }
+      }
+    }
+    sendFunctionOutput(event.call_id, output)
+  }
+
+  async function handleIntakeRiskCall(event: RealtimeFunctionCallDone) {
+    let args: { reason?: unknown, signals?: unknown }
+    try { args = JSON.parse(event.arguments) as { reason?: unknown, signals?: unknown } } catch { args = {} }
+    const reason = typeof args.reason === 'string' ? args.reason.trim() : ''
+    const signals = Array.isArray(args.signals)
+      ? args.signals.filter((value): value is string => typeof value === 'string' && INTAKE_SIGNALS.has(value))
+      : []
+    if (!reason || signals.length === 0) {
+      sendFunctionOutput(event.call_id, { assessed: false, error: 'A factual summary and valid intake signals are required.' })
+      return
+    }
+    try {
+      sendFunctionOutput(event.call_id, (await assessPatientIntakeRisk(reason, signals)).data)
+    } catch {
+      sendFunctionOutput(event.call_id, { assessed: false, error: 'Intake risk could not be assessed.' })
+    }
   }
 
   async function handleHandoffCall(event: RealtimeFunctionCallDone) {
-    let args: { reason?: unknown, urgency?: unknown }
-    try {
-      args = JSON.parse(event.arguments) as { reason?: unknown, urgency?: unknown }
-    } catch {
-      args = {}
-    }
-
+    let args: { reason?: unknown }
+    try { args = JSON.parse(event.arguments) as { reason?: unknown } } catch { args = {} }
     const reason = typeof args.reason === 'string' ? args.reason.trim() : ''
-    const urgency = typeof args.urgency === 'string' ? args.urgency : 'routine'
-
-    let output: { requested: boolean, handoff_state?: string, error?: string }
-    if (!reason || !HANDOFF_URGENCIES.has(urgency)) {
-      output = { requested: false, error: 'A factual handoff summary and valid urgency are required.' }
-    } else {
-      try {
-        const response = await requestPatientHandoff(reason, urgency)
-        output = { requested: true, handoff_state: response.data.handoff_state }
-      } catch {
-        output = { requested: false, error: 'Human handoff could not be requested.' }
-      }
+    if (!reason) {
+      sendFunctionOutput(event.call_id, { requested: false, error: 'A factual handoff summary is required.' })
+      return
     }
-
-    sendRealtimeEvent({
-      type: 'conversation.item.create',
-      item: {
-        type: 'function_call_output',
-        call_id: event.call_id,
-        output: JSON.stringify(output)
-      }
-    })
-    sendRealtimeEvent({ type: 'response.create' })
+    try {
+      const response = await requestPatientHandoff(reason)
+      sendFunctionOutput(event.call_id, { requested: true, handoff_state: response.data.handoff_state })
+    } catch {
+      sendFunctionOutput(event.call_id, { requested: false, error: 'Human handoff could not be requested.' })
+    }
   }
 
   async function handleFunctionCall(event: RealtimeFunctionCallDone) {
-    if (event.name === PATIENT_KNOWLEDGE_TOOL) {
-      await handleKnowledgeCall(event)
-    } else if (event.name === PATIENT_HANDOFF_TOOL) {
-      await handleHandoffCall(event)
-    }
+    if (event.name === PATIENT_KNOWLEDGE_TOOL) await handleKnowledgeCall(event)
+    else if (event.name === PATIENT_INTAKE_RISK_TOOL) await handleIntakeRiskCall(event)
+    else if (event.name === PATIENT_HANDOFF_TOOL) await handleHandoffCall(event)
   }
 
   async function handleRealtimeMessage(message: MessageEvent<string>) {
     let event: unknown
-    try {
-      event = JSON.parse(message.data)
-    } catch {
-      return
-    }
-
+    try { event = JSON.parse(message.data) } catch { return }
     if (
       typeof event === 'object'
       && event !== null
@@ -440,88 +413,51 @@ export function usePatientRealtimeVoice() {
       },
       body: offer.sdp
     })
-
-    if (!response.ok) {
-      throw new Error(`Realtime SDP exchange failed (${response.status})`)
-    }
-
+    if (!response.ok) throw new Error(`Realtime SDP exchange failed (${response.status})`)
     return await response.text()
   }
 
   async function connect(options: ConnectPatientVoiceOptions) {
     if (status.value === 'connecting' || status.value === 'connected') return
-    if (!options.patientToken.trim()) {
-      throw new Error('Patient session token is required')
-    }
-    if (typeof window === 'undefined') {
-      throw new Error('Realtime voice requires a browser')
-    }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error('Microphone access is not supported by this browser')
-    }
+    if (!options.patientToken.trim()) throw new Error('Patient session token is required')
+    if (typeof window === 'undefined') throw new Error('Realtime voice requires a browser')
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microphone access is not supported by this browser')
 
     status.value = 'connecting'
     errorMessage.value = null
-
     try {
       activePatientToken = options.patientToken
       activeLocale = options.locale || 'en'
       visualSnapshotConsentEnabled.value = options.visualSnapshotConsent === true
-      const minted = await mintSession(
-        options.patientToken,
-        options.locale,
-        visualSnapshotConsentEnabled.value
-      )
-      const descriptor = minted.data
-      if (!descriptor.client_secret) {
-        throw new Error('Realtime provider did not return a client secret')
-      }
-
+      const descriptor = (await mintSession(options.patientToken, options.locale, visualSnapshotConsentEnabled.value)).data
+      if (!descriptor.client_secret) throw new Error('Realtime provider did not return a client secret')
       sessionId.value = descriptor.session_id
       peerConnection = new RTCPeerConnection()
-
       remoteAudio = document.createElement('audio')
       remoteAudio.autoplay = true
       remoteAudio.setAttribute('aria-hidden', 'true')
       document.body.appendChild(remoteAudio)
-
       peerConnection.ontrack = (event) => {
         const [stream] = event.streams
         if (stream && remoteAudio) remoteAudio.srcObject = stream
       }
-
       peerConnection.onconnectionstatechange = () => {
         if (!peerConnection) return
-        if (peerConnection.connectionState === 'connected') {
-          status.value = 'connected'
-        } else if (['failed', 'disconnected', 'closed'].includes(peerConnection.connectionState)) {
+        if (peerConnection.connectionState === 'connected') status.value = 'connected'
+        else if (['failed', 'disconnected', 'closed'].includes(peerConnection.connectionState)) {
           if (status.value !== 'disconnecting') {
             status.value = peerConnection.connectionState === 'failed' ? 'error' : 'idle'
           }
         }
       }
-
       dataChannel = peerConnection.createDataChannel('oai-events')
-      dataChannel.onmessage = (event) => {
-        void handleRealtimeMessage(event)
-      }
-      dataChannel.onerror = () => {
-        errorMessage.value = 'Realtime event channel failed'
-      }
-
+      dataChannel.onmessage = (event) => { void handleRealtimeMessage(event) }
+      dataChannel.onerror = () => { errorMessage.value = 'Realtime event channel failed' }
       localStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        },
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         video: false
       })
-
-      for (const track of localStream.getAudioTracks()) {
-        peerConnection.addTrack(track, localStream)
-      }
-
+      for (const track of localStream.getAudioTracks()) peerConnection.addTrack(track, localStream)
       const offer = await peerConnection.createOffer()
       await peerConnection.setLocalDescription(offer)
       const answerSdp = await exchangeSdp(descriptor.client_secret, offer)
@@ -537,25 +473,17 @@ export function usePatientRealtimeVoice() {
 
   function setMuted(muted: boolean) {
     isMuted.value = muted
-    localStream?.getAudioTracks().forEach((track) => {
-      track.enabled = !muted
-    })
+    localStream?.getAudioTracks().forEach((track) => { track.enabled = !muted })
   }
 
-  function toggleMute() {
-    setMuted(!isMuted.value)
-  }
+  function toggleMute() { setMuted(!isMuted.value) }
 
   async function disconnect() {
     if (status.value === 'idle') return
     status.value = 'disconnecting'
     errorMessage.value = null
-    try {
-      await endPatientSession()
-    } catch (error: unknown) {
-      errorMessage.value = error instanceof Error
-        ? error.message
-        : 'Unable to end realtime session cleanly'
+    try { await endPatientSession() } catch (error: unknown) {
+      errorMessage.value = error instanceof Error ? error.message : 'Unable to end realtime session cleanly'
     } finally {
       cleanupMedia()
       sessionId.value = null
@@ -563,9 +491,7 @@ export function usePatientRealtimeVoice() {
     }
   }
 
-  onBeforeUnmount(() => {
-    cleanupMedia()
-  })
+  onBeforeUnmount(() => { cleanupMedia() })
 
   return {
     status: readonly(status),
