@@ -59,7 +59,9 @@ class DentalKnowledgeReviewService:
         record.decision_note = None
         record.clinically_reviewed = False
         record.approved_for_patient_education = False
-        record.source_metadata = without_semantic_embedding(getattr(record, "source_metadata", None))
+        record.source_metadata = without_semantic_embedding(
+            getattr(record, "source_metadata", None)
+        )
         db.add(self._audit(record, actor_user_id, "dental_knowledge_submitted", "recorded"))
         await db.flush()
         return record
@@ -121,7 +123,9 @@ class DentalKnowledgeReviewService:
         record.decision_note = reason
         record.clinically_reviewed = False
         record.approved_for_patient_education = False
-        record.source_metadata = without_semantic_embedding(getattr(record, "source_metadata", None))
+        record.source_metadata = without_semantic_embedding(
+            getattr(record, "source_metadata", None)
+        )
         db.add(
             self._audit(
                 record,
@@ -191,7 +195,9 @@ class DentalKnowledgeReviewService:
 
     async def _refresh_semantic_embedding(self, record: PatientAgentDentalKnowledge) -> bool:
         provider = self._embedding_provider
-        record.source_metadata = without_semantic_embedding(getattr(record, "source_metadata", None))
+        record.source_metadata = without_semantic_embedding(
+            getattr(record, "source_metadata", None)
+        )
         if provider is None or not self._eligible_for_semantic_index(record):
             return False
         try:
