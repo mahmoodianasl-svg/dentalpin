@@ -15,6 +15,19 @@ from app.modules.patient_agent.schemas import PatientDentalKnowledgeSearchReques
 router_module = importlib.import_module("app.modules.patient_agent.router")
 
 
+class FakeAuditDb(SimpleNamespace):
+    def __init__(self) -> None:
+        super().__init__()
+        self.added: list[object] = []
+        self.flush_count = 0
+
+    def add(self, value: object) -> None:
+        self.added.append(value)
+
+    async def flush(self) -> None:
+        self.flush_count += 1
+
+
 def _principal() -> PatientPrincipal:
     return PatientPrincipal(
         patient_id=uuid4(),
@@ -51,7 +64,7 @@ async def test_patient_knowledge_search_returns_provenance_and_patient_education
             )
 
     monkeypatch.setattr(router_module, "DatabaseDentalKnowledgeRetriever", FakeRetriever)
-    db = SimpleNamespace()
+    db = FakeAuditDb()
 
     response = await patient_dental_knowledge_search(
         PatientDentalKnowledgeSearchRequest(
@@ -74,6 +87,8 @@ async def test_patient_knowledge_search_returns_provenance_and_patient_education
     assert source.source_name == "Clinic knowledge"
     assert source.source_reference == "kb://implant-basics/2"
     assert source.content.startswith("Dentist-reviewed")
+    assert len(db.added) == 1
+    assert db.flush_count == 1
 
 
 @pytest.mark.asyncio
@@ -89,16 +104,19 @@ async def test_patient_knowledge_search_requires_safe_fallback_when_no_approved_
             return ()
 
     monkeypatch.setattr(router_module, "DatabaseDentalKnowledgeRetriever", EmptyRetriever)
+    db = FakeAuditDb()
 
     response = await patient_dental_knowledge_search(
         PatientDentalKnowledgeSearchRequest(query="unknown dental question"),
         _principal(),
-        SimpleNamespace(),
+        db,
     )
 
     assert response.data.sources == []
     assert response.data.fallback_required is True
     assert response.data.patient_education_only is True
+    assert len(db.added) == 1
+    assert db.flush_count == 1
 
 
 def test_patient_knowledge_search_request_caps_retrieval_limit() -> None:
