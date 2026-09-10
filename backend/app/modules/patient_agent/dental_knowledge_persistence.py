@@ -8,8 +8,11 @@ from collections.abc import Sequence
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
+
 from .dental_conversation import DentalKnowledgeEntry, DentalKnowledgeRetriever, DentalTopic
 from .models import PatientAgentDentalKnowledge
+from .semantic_embeddings import EmbeddingProvider, configured_embedding_provider, cosine_similarity
 
 
 def approved_dental_knowledge_query(
@@ -35,9 +38,16 @@ def approved_dental_knowledge_query(
 class DatabaseDentalKnowledgeRetriever(DentalKnowledgeRetriever):
     """Clinic-scoped retriever that exposes only explicitly approved records."""
 
-    def __init__(self, *, db: AsyncSession, clinic_id: uuid.UUID) -> None:
+    def __init__(
+        self,
+        *,
+        db: AsyncSession,
+        clinic_id: uuid.UUID,
+        embedding_provider: EmbeddingProvider | None = None,
+    ) -> None:
         self._db = db
         self._clinic_id = clinic_id
+        self._embedding_provider = embedding_provider or configured_embedding_provider()
 
     async def search(
         self,
@@ -66,16 +76,63 @@ class DatabaseDentalKnowledgeRetriever(DentalKnowledgeRetriever):
                 latest_by_key[row.entry_key] = row
 
         terms = {term for term in query.casefold().strip().split() if len(term) >= 3}
-        ranked: list[tuple[int, PatientAgentDentalKnowledge]] = []
+        query_embedding = await self._safe_query_embedding(query)
+        ranked: list[tuple[int, float, int, PatientAgentDentalKnowledge]] = []
         for row in latest_by_key.values():
             haystack = f"{row.title} {row.content}".casefold()
-            score = sum(1 for term in terms if term in haystack)
-            if terms and score == 0:
+            lexical_score = sum(1 for term in terms if term in haystack)
+            semantic_score = self._semantic_score(row, query_embedding)
+            semantic_match = (
+                semantic_score is not None
+                and semantic_score >= settings.PATIENT_AGENT_SEMANTIC_MIN_SCORE
+            )
+            if terms and lexical_score == 0 and not semantic_match:
                 continue
-            ranked.append((score, row))
+            ranked.append(
+                (
+                    1 if semantic_match else 0,
+                    semantic_score if semantic_score is not None else -1.0,
+                    lexical_score,
+                    row,
+                )
+            )
 
-        ranked.sort(key=lambda item: (-item[0], item[1].title.casefold(), item[1].entry_key))
-        return tuple(self._to_entry(row) for _, row in ranked[:limit])
+        ranked.sort(
+            key=lambda item: (
+                -item[0],
+                -item[1],
+                -item[2],
+                item[3].title.casefold(),
+                item[3].entry_key,
+            )
+        )
+        return tuple(self._to_entry(row) for *_, row in ranked[:limit])
+
+    async def _safe_query_embedding(self, query: str) -> Sequence[float]:
+        provider = self._embedding_provider
+        if provider is None or not query.strip():
+            return ()
+        try:
+            return tuple(await provider.embed(query))
+        except Exception:
+            return ()
+
+    def _semantic_score(
+        self,
+        row: PatientAgentDentalKnowledge,
+        query_embedding: Sequence[float],
+    ) -> float | None:
+        provider = self._embedding_provider
+        if provider is None or not query_embedding:
+            return None
+        metadata = row.source_metadata or {}
+        payload = metadata.get("semantic_embedding")
+        if not isinstance(payload, dict) or payload.get("model") != provider.model:
+            return None
+        vector = payload.get("vector")
+        if not isinstance(vector, list) or not all(isinstance(value, (int, float)) for value in vector):
+            return None
+        return cosine_similarity(query_embedding, tuple(float(value) for value in vector))
 
     @staticmethod
     def _to_entry(row: PatientAgentDentalKnowledge) -> DentalKnowledgeEntry:
