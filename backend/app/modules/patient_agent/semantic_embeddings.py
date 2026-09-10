@@ -8,11 +8,15 @@ when an embedding provider is unavailable.
 
 from __future__ import annotations
 
+import hashlib
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from typing import Protocol
 
 from app.config import settings
+
+SEMANTIC_EMBEDDING_KEY = "semantic_embedding"
 
 
 class EmbeddingProvider(Protocol):
@@ -63,15 +67,65 @@ def configured_embedding_provider() -> EmbeddingProvider | None:
     )
 
 
-def cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float | None:
-    """Return cosine similarity for equal non-empty vectors.
+def semantic_embedding_input(*, title: str, content: str) -> str:
+    """Build the stable text representation used for both indexing and validation."""
 
-    Invalid, zero-length, dimension-mismatched, or zero-norm vectors return
+    return f"{title.strip()}\n\n{content.strip()}".strip()
+
+
+def semantic_content_fingerprint(*, title: str, content: str) -> str:
+    """Fingerprint the exact text represented by a stored semantic vector."""
+
+    payload = semantic_embedding_input(title=title, content=content).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def with_semantic_embedding(
+    metadata: Mapping[str, object] | None,
+    *,
+    model: str,
+    vector: Sequence[float],
+    title: str,
+    content: str,
+) -> dict[str, object]:
+    """Return copied metadata with a validated, content-bound semantic vector."""
+
+    normalized = tuple(float(value) for value in vector)
+    if not normalized or any(not math.isfinite(value) for value in normalized):
+        raise ValueError("Semantic embedding vector must contain finite values")
+    if not model.strip():
+        raise ValueError("Semantic embedding model is required")
+
+    updated = dict(metadata or {})
+    updated[SEMANTIC_EMBEDDING_KEY] = {
+        "model": model,
+        "dimensions": len(normalized),
+        "vector": list(normalized),
+        "content_sha256": semantic_content_fingerprint(title=title, content=content),
+        "indexed_at": datetime.now(UTC).isoformat(),
+    }
+    return updated
+
+
+def without_semantic_embedding(metadata: Mapping[str, object] | None) -> dict[str, object]:
+    """Return copied metadata with any semantic index payload removed."""
+
+    updated = dict(metadata or {})
+    updated.pop(SEMANTIC_EMBEDDING_KEY, None)
+    return updated
+
+
+def cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float | None:
+    """Return cosine similarity for equal non-empty finite vectors.
+
+    Invalid, dimension-mismatched, non-finite, or zero-norm vectors return
     ``None`` so retrieval can fall back without treating malformed metadata as
     a relevant semantic match.
     """
 
     if not left or not right or len(left) != len(right):
+        return None
+    if any(not math.isfinite(value) for value in (*left, *right)):
         return None
     dot = sum(a * b for a, b in zip(left, right, strict=True))
     left_norm = math.sqrt(sum(value * value for value in left))
