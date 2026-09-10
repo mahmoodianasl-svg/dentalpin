@@ -179,7 +179,7 @@ async def test_wrong_embedding_model_does_not_create_semantic_match() -> None:
     )
 
     results = await retriever.search(
-        query="healing guidance",
+        query="healing recovery",
         locale="en",
         topic=DentalTopic.IMPLANTS,
         limit=5,
