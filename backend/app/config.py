@@ -87,6 +87,12 @@ class Settings(BaseSettings):
     COPILOT_MAX_TOKENS: int = 4096
     COPILOT_REDACTION_DEFAULT: bool = True
 
+    # Patient-agent semantic retrieval. Embeddings are only used when an
+    # OpenAI API key is configured; otherwise retrieval safely falls back to
+    # the deterministic lexical path.
+    PATIENT_AGENT_EMBEDDING_MODEL: str = "text-embedding-3-small"
+    PATIENT_AGENT_SEMANTIC_MIN_SCORE: float = 0.35
+
     @property
     def allowed_origins_list(self) -> list[str]:
         """Parse ALLOWED_ORIGINS as comma-separated list."""

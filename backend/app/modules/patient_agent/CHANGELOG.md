@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added clinic-scoped semantic ranking for approved patient-education knowledge with content-bound embeddings, cosine similarity, deterministic lexical fallback, approval-time indexing, stale-vector invalidation, and a controlled staff reindex endpoint for already-approved knowledge.
 - Added metadata-only realtime tool and safety-decision audit coverage: patient knowledge searches now persist success/fallback outcomes without raw queries; intake-risk decisions record tool/action provenance; automatic escalation is attributed to the system; and handoff audits no longer persist raw patient summaries.
 - Added server-side deterministic intake-risk assessment for structured patient safety signals; urgent and emergency-risk assessments automatically trigger human handoff, and an existing higher-risk session state cannot be downgraded by later lower-risk input.
 - Removed model-assigned handoff urgency from the realtime tool boundary; direct handoff requests now inherit DentalPin's server-derived session risk.

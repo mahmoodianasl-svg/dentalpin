@@ -137,6 +137,26 @@ async def reject_dental_knowledge(
     return ApiResponse(data=DentalKnowledgeReviewResponse.model_validate(record))
 
 
+@review_router.post(
+    "/{record_id}/semantic-reindex",
+    response_model=ApiResponse[DentalKnowledgeReviewResponse],
+)
+async def reindex_dental_knowledge_semantics(
+    record_id: UUID,
+    ctx: Annotated[ClinicContext, Depends(get_clinic_context)],
+    _: Annotated[None, Depends(require_permission("patient_agent.knowledge.review"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ApiResponse[DentalKnowledgeReviewResponse]:
+    record = await _transition(
+        DentalKnowledgeReviewService().reindex,
+        db=db,
+        clinic_id=ctx.clinic_id,
+        record_id=record_id,
+        actor_user_id=ctx.user_id,
+    )
+    return ApiResponse(data=DentalKnowledgeReviewResponse.model_validate(record))
+
+
 async def _transition(operation, **kwargs):
     try:
         return await operation(**kwargs)
