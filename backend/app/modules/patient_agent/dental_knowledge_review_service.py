@@ -9,10 +9,20 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import PatientAgentAuditEvent, PatientAgentDentalKnowledge
+from .semantic_embeddings import (
+    EmbeddingProvider,
+    configured_embedding_provider,
+    semantic_embedding_input,
+    with_semantic_embedding,
+    without_semantic_embedding,
+)
 
 
 class DentalKnowledgeReviewService:
     """Apply auditable review transitions within one clinic boundary."""
+
+    def __init__(self, *, embedding_provider: EmbeddingProvider | None = None) -> None:
+        self._embedding_provider = embedding_provider or configured_embedding_provider()
 
     async def get_record(
         self,
@@ -49,6 +59,7 @@ class DentalKnowledgeReviewService:
         record.decision_note = None
         record.clinically_reviewed = False
         record.approved_for_patient_education = False
+        record.source_metadata = without_semantic_embedding(record.source_metadata)
         db.add(self._audit(record, actor_user_id, "dental_knowledge_submitted", "recorded"))
         await db.flush()
         return record
@@ -74,7 +85,16 @@ class DentalKnowledgeReviewService:
         record.approved_for_patient_education = True
         record.active = True
         record.retired_at = None
-        db.add(self._audit(record, actor_user_id, "dental_knowledge_approved", "success"))
+        indexed = await self._refresh_semantic_embedding(record)
+        db.add(
+            self._audit(
+                record,
+                actor_user_id,
+                "dental_knowledge_approved",
+                "success",
+                semantic_indexed=indexed,
+            )
+        )
         await db.flush()
         return record
 
@@ -101,6 +121,7 @@ class DentalKnowledgeReviewService:
         record.decision_note = reason
         record.clinically_reviewed = False
         record.approved_for_patient_education = False
+        record.source_metadata = without_semantic_embedding(record.source_metadata)
         db.add(
             self._audit(
                 record,
@@ -112,6 +133,91 @@ class DentalKnowledgeReviewService:
         )
         await db.flush()
         return record
+
+    async def reindex(
+        self,
+        *,
+        db: AsyncSession,
+        clinic_id: UUID,
+        record_id: UUID,
+        actor_user_id: UUID,
+    ) -> PatientAgentDentalKnowledge:
+        record = await self._require_record(db=db, clinic_id=clinic_id, record_id=record_id)
+        if not self._eligible_for_semantic_index(record):
+            raise ValueError("Only active approved patient-education knowledge can be reindexed")
+        provider = self._embedding_provider
+        if provider is None:
+            raise ValueError("Semantic embedding provider is not configured")
+
+        try:
+            vector = await provider.embed(
+                semantic_embedding_input(title=record.title, content=record.content)
+            )
+            record.source_metadata = with_semantic_embedding(
+                record.source_metadata,
+                model=provider.model,
+                vector=vector,
+                title=record.title,
+                content=record.content,
+            )
+        except Exception as exc:
+            record.source_metadata = without_semantic_embedding(record.source_metadata)
+            db.add(
+                self._audit(
+                    record,
+                    actor_user_id,
+                    "dental_knowledge_semantic_reindex_failed",
+                    "failed",
+                    reason=type(exc).__name__,
+                    semantic_indexed=False,
+                )
+            )
+            await db.flush()
+            raise ValueError("Semantic reindex failed") from exc
+
+        db.add(
+            self._audit(
+                record,
+                actor_user_id,
+                "dental_knowledge_semantic_reindexed",
+                "success",
+                semantic_indexed=True,
+            )
+        )
+        await db.flush()
+        return record
+
+    async def _refresh_semantic_embedding(self, record: PatientAgentDentalKnowledge) -> bool:
+        provider = self._embedding_provider
+        record.source_metadata = without_semantic_embedding(record.source_metadata)
+        if provider is None or not self._eligible_for_semantic_index(record):
+            return False
+        try:
+            vector = await provider.embed(
+                semantic_embedding_input(title=record.title, content=record.content)
+            )
+            record.source_metadata = with_semantic_embedding(
+                record.source_metadata,
+                model=provider.model,
+                vector=vector,
+                title=record.title,
+                content=record.content,
+            )
+        except Exception:
+            record.source_metadata = without_semantic_embedding(record.source_metadata)
+            return False
+        return True
+
+    @staticmethod
+    def _eligible_for_semantic_index(record: PatientAgentDentalKnowledge) -> bool:
+        return (
+            record.review_status == "approved"
+            and record.active
+            and record.clinically_reviewed
+            and record.approved_for_patient_education
+            and record.reviewed_by is not None
+            and record.retired_at is None
+        )
 
     async def _require_record(
         self,
@@ -133,7 +239,17 @@ class DentalKnowledgeReviewService:
         outcome: str,
         *,
         reason: str | None = None,
+        semantic_indexed: bool | None = None,
     ) -> PatientAgentAuditEvent:
+        detail = {
+            "knowledge_id": str(record.id),
+            "entry_key": record.entry_key,
+            "version": record.version,
+            "review_status": record.review_status,
+            "actor_user_id": str(actor_user_id),
+        }
+        if semantic_indexed is not None:
+            detail["semantic_indexed"] = semantic_indexed
         return PatientAgentAuditEvent(
             session_id=None,
             clinic_id=record.clinic_id,
@@ -141,12 +257,6 @@ class DentalKnowledgeReviewService:
             event_type=event_type,
             actor_type="staff",
             outcome=outcome,
-            detail={
-                "knowledge_id": str(record.id),
-                "entry_key": record.entry_key,
-                "version": record.version,
-                "review_status": record.review_status,
-                "actor_user_id": str(actor_user_id),
-            },
+            detail=detail,
             reason=reason,
         )
