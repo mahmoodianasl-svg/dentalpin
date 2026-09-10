@@ -12,7 +12,13 @@ from app.config import settings
 
 from .dental_conversation import DentalKnowledgeEntry, DentalKnowledgeRetriever, DentalTopic
 from .models import PatientAgentDentalKnowledge
-from .semantic_embeddings import EmbeddingProvider, configured_embedding_provider, cosine_similarity
+from .semantic_embeddings import (
+    SEMANTIC_EMBEDDING_KEY,
+    EmbeddingProvider,
+    configured_embedding_provider,
+    cosine_similarity,
+    semantic_content_fingerprint,
+)
 
 
 def approved_dental_knowledge_query(
@@ -126,11 +132,19 @@ class DatabaseDentalKnowledgeRetriever(DentalKnowledgeRetriever):
         if provider is None or not query_embedding:
             return None
         metadata = row.source_metadata or {}
-        payload = metadata.get("semantic_embedding")
+        payload = metadata.get(SEMANTIC_EMBEDDING_KEY)
         if not isinstance(payload, dict) or payload.get("model") != provider.model:
             return None
+        expected_fingerprint = semantic_content_fingerprint(title=row.title, content=row.content)
+        if payload.get("content_sha256") != expected_fingerprint:
+            return None
         vector = payload.get("vector")
-        if not isinstance(vector, list) or not all(isinstance(value, (int, float)) for value in vector):
+        if not isinstance(vector, list) or not all(
+            isinstance(value, (int, float)) and not isinstance(value, bool) for value in vector
+        ):
+            return None
+        dimensions = payload.get("dimensions")
+        if not isinstance(dimensions, int) or dimensions != len(vector):
             return None
         return cosine_similarity(query_embedding, tuple(float(value) for value in vector))
 
