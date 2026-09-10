@@ -8,7 +8,7 @@ import pytest
 from app.modules.patient_agent.dental_conversation import DentalTopic
 from app.modules.patient_agent.dental_knowledge_persistence import DatabaseDentalKnowledgeRetriever
 from app.modules.patient_agent.models import PatientAgentDentalKnowledge
-from app.modules.patient_agent.semantic_embeddings import cosine_similarity
+from app.modules.patient_agent.semantic_embeddings import cosine_similarity, with_semantic_embedding
 
 
 class FakeEmbeddingProvider:
@@ -67,11 +67,13 @@ def _approved_row(
 ) -> PatientAgentDentalKnowledge:
     metadata: dict[str, object] = {}
     if vector is not None:
-        metadata["semantic_embedding"] = {
-            "model": model,
-            "dimensions": len(vector),
-            "vector": vector,
-        }
+        metadata = with_semantic_embedding(
+            metadata,
+            model=model,
+            vector=vector,
+            title=title,
+            content=content,
+        )
     return PatientAgentDentalKnowledge(
         id=uuid4(),
         clinic_id=uuid4(),
@@ -96,6 +98,7 @@ def test_cosine_similarity_rejects_invalid_vectors() -> None:
     assert cosine_similarity((), (1.0,)) is None
     assert cosine_similarity((1.0,), (1.0, 0.0)) is None
     assert cosine_similarity((0.0, 0.0), (1.0, 0.0)) is None
+    assert cosine_similarity((float("nan"),), (1.0,)) is None
 
 
 def test_cosine_similarity_scores_aligned_vectors() -> None:
@@ -169,6 +172,31 @@ async def test_wrong_embedding_model_does_not_create_semantic_match() -> None:
         vector=[1.0, 0.0],
         model="different-model",
     )
+    retriever = DatabaseDentalKnowledgeRetriever(
+        db=FakeDb([row]),
+        clinic_id=row.clinic_id,
+        embedding_provider=FakeEmbeddingProvider(vector=(1.0, 0.0)),
+    )
+
+    results = await retriever.search(
+        query="healing guidance",
+        locale="en",
+        topic=DentalTopic.IMPLANTS,
+        limit=5,
+    )
+
+    assert results == ()
+
+
+@pytest.mark.asyncio
+async def test_stale_embedding_does_not_rank_modified_content() -> None:
+    row = _approved_row(
+        entry_key="implant-aftercare",
+        title="After surgery care",
+        content="Original reviewed guidance.",
+        vector=[1.0, 0.0],
+    )
+    row.content = "Modified content that has not been reindexed."
     retriever = DatabaseDentalKnowledgeRetriever(
         db=FakeDb([row]),
         clinic_id=row.clinic_id,
