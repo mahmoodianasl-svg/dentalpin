@@ -68,9 +68,7 @@ async def test_approval_indexes_content_when_provider_available() -> None:
     record = _record()
     db, added = _db_for(record)
 
-    result = await DentalKnowledgeReviewService(
-        embedding_provider=FakeEmbeddingProvider()
-    ).approve(
+    result = await DentalKnowledgeReviewService(embedding_provider=FakeEmbeddingProvider()).approve(
         db=db,
         clinic_id=record.clinic_id,
         record_id=record.id,
@@ -143,9 +141,7 @@ async def test_reindex_requires_current_patient_education_eligibility() -> None:
     db, _ = _db_for(record)
 
     with pytest.raises(ValueError, match="Only active approved"):
-        await DentalKnowledgeReviewService(
-            embedding_provider=FakeEmbeddingProvider()
-        ).reindex(
+        await DentalKnowledgeReviewService(embedding_provider=FakeEmbeddingProvider()).reindex(
             db=db,
             clinic_id=record.clinic_id,
             record_id=record.id,
