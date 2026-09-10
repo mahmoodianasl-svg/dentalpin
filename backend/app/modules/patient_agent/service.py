@@ -356,6 +356,16 @@ class PatientAgentService:
         context["intake_signals"] = sorted(signal.value for signal in signals)
         session.context = context
 
+        requires_handoff = effective in {
+            AgentRiskLevel.URGENT,
+            AgentRiskLevel.EMERGENCY_ESCALATION,
+        }
+        safety_decision = "continue"
+        if effective == AgentRiskLevel.EMERGENCY_ESCALATION:
+            safety_decision = "emergency_escalation"
+        elif effective == AgentRiskLevel.URGENT:
+            safety_decision = "human_handoff"
+
         db.add(
             PatientAgentAuditEvent(
                 session_id=session.id,
@@ -365,21 +375,25 @@ class PatientAgentService:
                 actor_type="system",
                 outcome="recorded",
                 detail={
+                    "tool_name": "assess_patient_intake_risk",
                     "assessed_urgency": assessed.value,
                     "effective_urgency": effective.value,
                     "signals": sorted(signal.value for signal in signals),
+                    "requires_handoff": requires_handoff,
+                    "safety_decision": safety_decision,
                     "diagnostic": False,
                 },
-                reason=reason.strip(),
+                reason="Deterministic intake risk classification",
             )
         )
 
-        if effective in {AgentRiskLevel.URGENT, AgentRiskLevel.EMERGENCY_ESCALATION}:
+        if requires_handoff:
             await self.request_handoff(
                 db=db,
                 principal=principal,
                 session=session,
                 reason=reason,
+                actor_type="system",
             )
         else:
             await db.flush()
@@ -393,6 +407,7 @@ class PatientAgentService:
         session: PatientAgentSession,
         reason: str,
         urgency: AgentRiskLevel | None = None,
+        actor_type: str = "patient",
     ) -> None:
         if session.clinic_id != principal.clinic_id or session.patient_id != principal.patient_id:
             raise PermissionError("Patient session scope mismatch")
@@ -408,6 +423,10 @@ class PatientAgentService:
         effective_urgency = (
             highest_risk_level(server_urgency, urgency) if urgency is not None else server_urgency
         )
+        urgency_source = "server_session"
+        if urgency is not None and effective_urgency != server_urgency:
+            urgency_source = "trusted_api_raise"
+
         context["handoff_summary"] = summary
         context["handoff_urgency"] = effective_urgency.value
         session.context = context
@@ -426,14 +445,21 @@ class PatientAgentService:
                     if effective_urgency == AgentRiskLevel.EMERGENCY_ESCALATION
                     else "human_handoff_requested"
                 ),
-                actor_type="patient",
+                actor_type=actor_type,
                 outcome="recorded",
                 detail={
+                    "tool_name": "request_patient_human_handoff",
                     "urgency": effective_urgency.value,
                     "summary_preserved": True,
-                    "server_derived_urgency": True,
+                    "server_derived_urgency": urgency_source == "server_session",
+                    "urgency_source": urgency_source,
+                    "safety_decision": session.handoff_state,
                 },
-                reason=summary,
+                reason=(
+                    "Emergency escalation requested"
+                    if effective_urgency == AgentRiskLevel.EMERGENCY_ESCALATION
+                    else "Human handoff requested"
+                ),
             )
         )
         await db.flush()

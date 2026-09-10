@@ -274,10 +274,32 @@ async def patient_dental_knowledge_search(
         )
         for entry in entries
     ]
+    fallback_required = not sources
+    db.add(
+        PatientAgentAuditEvent(
+            session_id=None,
+            clinic_id=principal.clinic_id,
+            patient_id=principal.patient_id,
+            event_type="patient_knowledge_search_completed",
+            actor_type="system",
+            outcome="fallback" if fallback_required else "success",
+            detail={
+                "tool_name": "search_patient_dental_knowledge",
+                "result_count": len(sources),
+                "fallback_required": fallback_required,
+                "locale": payload.locale,
+                "topic": payload.topic.value if payload.topic is not None else None,
+                "query_length": len(payload.query.strip()),
+                "patient_education_only": True,
+            },
+            reason="Clinic-approved patient education knowledge lookup",
+        )
+    )
+    await db.flush()
     return ApiResponse(
         data=PatientDentalKnowledgeSearchResponse(
             sources=sources,
-            fallback_required=not sources,
+            fallback_required=fallback_required,
         )
     )
 
