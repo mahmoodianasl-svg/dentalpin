@@ -77,10 +77,16 @@ async def test_intake_and_auto_handoff_audits_are_metadata_only(
 
     assert urgency == AgentRiskLevel.EMERGENCY_ESCALATION
     events = (
-        await db_session.execute(
-            select(PatientAgentAuditEvent).where(PatientAgentAuditEvent.session_id == session.id)
+        (
+            await db_session.execute(
+                select(PatientAgentAuditEvent).where(
+                    PatientAgentAuditEvent.session_id == session.id
+                )
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     risk_audit = next(event for event in events if event.event_type == "intake_risk_assessed")
     escalation_audit = next(
         event for event in events if event.event_type == "emergency_escalation_requested"
