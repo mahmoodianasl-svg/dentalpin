@@ -252,6 +252,30 @@ jobs:
         run: docker compose exec -T backend alembic upgrade heads
       - name: Seed demo data
         run: ./scripts/seed-demo.sh --lang es
+      - name: Activate periodontogram E2E fixture
+        run: |
+          set -euo pipefail
+          TOKEN="$(curl -sf -X POST http://localhost:8000/api/v1/auth/login \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "username=admin@demo.clinic&password=demo1234" \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])")"
+          STATUS="$(curl -sS -o /tmp/periodontogram-install.json -w "%{http_code}" \
+            -X POST http://localhost:8000/api/v1/modules/periodontogram/install \
+            -H "Authorization: Bearer ${TOKEN}")"
+          test "${STATUS}" = "202" || {
+            cat /tmp/periodontogram-install.json
+            exit 1
+          }
+          docker compose restart backend
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/health > /dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          curl -sf http://localhost:8000/api/v1/modules/-/active \
+            -H "Authorization: Bearer ${TOKEN}" \
+            | python3 -c "import json,sys; data=json.load(sys.stdin)['data']; assert any(item['name'] == 'periodontogram' for item in data)"
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
