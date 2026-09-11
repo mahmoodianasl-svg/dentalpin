@@ -8,6 +8,7 @@ related_endpoints:
   - POST /api/v1/patient_agent/knowledge/{record_id}/submit
   - POST /api/v1/patient_agent/knowledge/{record_id}/approve
   - POST /api/v1/patient_agent/knowledge/{record_id}/reject
+  - POST /api/v1/patient_agent/knowledge/{record_id}/retire
 related_permissions:
   - patient_agent.knowledge.read
   - patient_agent.knowledge.review
@@ -28,11 +29,13 @@ Utiliza esta pantalla para revisar contenido curado de educación al paciente an
 - Enviar registros en borrador o rechazados a revisión.
 - Aprobar contenido para educación al paciente.
 - Rechazar contenido indicando obligatoriamente el motivo de la decisión.
+- Retirar contenido aprobado activo indicando obligatoriamente el motivo de la retirada.
 
 ## Permisos
 
 - `patient_agent.knowledge.read` permite ver la cola de revisión y los detalles de los registros.
 - `patient_agent.knowledge.review` permite al personal dentista/administrador autorizado enviar, aprobar o rechazar registros.
+- Aprobar una versión nueva retira automáticamente la versión activa anterior e impide que una versión antigua sustituya contenido más reciente.
 
 El personal sin permiso de revisión solo puede consultar el contenido y no puede cambiar su estado.
 

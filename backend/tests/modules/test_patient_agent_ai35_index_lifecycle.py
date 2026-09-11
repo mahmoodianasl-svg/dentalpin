@@ -54,7 +54,10 @@ def _record(*, status: str = "in_review") -> SimpleNamespace:
 
 def _db_for(record: SimpleNamespace) -> tuple[SimpleNamespace, list[object]]:
     added: list[object] = []
-    result = SimpleNamespace(scalar_one_or_none=lambda: record)
+    result = SimpleNamespace(
+        scalar_one_or_none=lambda: record,
+        scalars=lambda: SimpleNamespace(all=lambda: []),
+    )
     db = SimpleNamespace(
         execute=AsyncMock(return_value=result),
         add=lambda value: added.append(value),

@@ -55,21 +55,23 @@ async function selectItem(item: DentalKnowledgeReviewRecord) {
   }
 }
 
-async function runTransition(action: 'submit' | 'approve' | 'reject') {
+async function runTransition(action: 'submit' | 'approve' | 'reject' | 'retire') {
   if (!selected.value || !canReview.value || isSaving.value) return
-  if (action === 'reject' && !note.value.trim()) {
-    errorMessage.value = 'A rejection reason is required.'
+  if ((action === 'reject' || action === 'retire') && !note.value.trim()) {
+    errorMessage.value = action === 'reject'
+      ? 'A rejection reason is required.'
+      : 'A retirement reason is required.'
     return
   }
   isSaving.value = true
   errorMessage.value = null
   try {
     const id = selected.value.id
-    const response = action === 'submit'
-      ? await api.submit(id)
-      : action === 'approve'
-        ? await api.approve(id, note.value)
-        : await api.reject(id, note.value)
+    let response: { data: DentalKnowledgeReviewRecord }
+    if (action === 'submit') response = await api.submit(id)
+    else if (action === 'approve') response = await api.approve(id, note.value)
+    else if (action === 'reject') response = await api.reject(id, note.value)
+    else response = await api.retire(id, note.value)
     selected.value = response.data
     note.value = response.data.decision_note ?? ''
     await load()
@@ -183,7 +185,7 @@ onMounted(load)
               </div>
             </div>
             <UBadge variant="soft">
-              {{ selected.review_status.replace('_', ' ') }}
+              {{ selected.retired_at ? 'retired' : selected.review_status.replace('_', ' ') }}
             </UBadge>
           </div>
         </template>
@@ -222,7 +224,7 @@ onMounted(load)
               :disabled="!canReview"
               :rows="4"
               maxlength="4000"
-              placeholder="Optional for approval; required for rejection."
+              placeholder="Optional for approval; required for rejection or retirement."
             />
           </UFormField>
 
@@ -261,6 +263,15 @@ onMounted(load)
                 Reject
               </UButton>
             </template>
+            <UButton
+              v-if="selected.review_status === 'approved' && selected.active && !selected.retired_at"
+              color="error"
+              variant="soft"
+              :loading="isSaving"
+              @click="runTransition('retire')"
+            >
+              Retire from patient education
+            </UButton>
           </div>
         </div>
       </UCard>

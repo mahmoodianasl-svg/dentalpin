@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .dental_knowledge_locks import lock_dental_knowledge_entries
 from .models import PatientAgentAuditEvent, PatientAgentDentalKnowledge
 from .semantic_embeddings import (
     EmbeddingProvider,
@@ -75,13 +76,46 @@ class DentalKnowledgeReviewService:
         actor_user_id: UUID,
         decision_note: str | None = None,
     ) -> PatientAgentDentalKnowledge:
+        candidate = await self._require_record(
+            db=db,
+            clinic_id=clinic_id,
+            record_id=record_id,
+        )
+        await lock_dental_knowledge_entries(
+            db=db,
+            clinic_id=clinic_id,
+            entry_keys=[candidate.entry_key],
+        )
         record = await self._require_record(db=db, clinic_id=clinic_id, record_id=record_id)
         if record.review_status != "in_review":
             raise ValueError("Only in-review knowledge can be approved")
 
+        active_versions = await self._active_approved_versions(
+            db=db,
+            clinic_id=clinic_id,
+            entry_key=record.entry_key,
+            excluding_id=record.id,
+        )
+        if any(existing.version >= record.version for existing in active_versions):
+            raise ValueError("An equal or newer knowledge version is already active")
+
+        reviewed_at = datetime.now(UTC)
+        for existing in active_versions:
+            self._retire_record(existing, retired_at=reviewed_at)
+            db.add(
+                self._audit(
+                    existing,
+                    actor_user_id,
+                    "dental_knowledge_superseded",
+                    "success",
+                    reason="Superseded by a newer approved version",
+                    replacement=record,
+                )
+            )
+
         record.review_status = "approved"
         record.reviewed_by = actor_user_id
-        record.reviewed_at = datetime.now(UTC)
+        record.reviewed_at = reviewed_at
         record.decision_note = decision_note.strip() if decision_note else None
         record.clinically_reviewed = True
         record.approved_for_patient_education = True
@@ -95,6 +129,46 @@ class DentalKnowledgeReviewService:
                 "dental_knowledge_approved",
                 "success",
                 semantic_indexed=indexed,
+            )
+        )
+        await db.flush()
+        return record
+
+    async def retire(
+        self,
+        *,
+        db: AsyncSession,
+        clinic_id: UUID,
+        record_id: UUID,
+        actor_user_id: UUID,
+        reason: str,
+    ) -> PatientAgentDentalKnowledge:
+        retirement_reason = reason.strip()
+        if not retirement_reason:
+            raise ValueError("Retirement reason is required")
+
+        candidate = await self._require_record(
+            db=db,
+            clinic_id=clinic_id,
+            record_id=record_id,
+        )
+        await lock_dental_knowledge_entries(
+            db=db,
+            clinic_id=clinic_id,
+            entry_keys=[candidate.entry_key],
+        )
+        record = await self._require_record(db=db, clinic_id=clinic_id, record_id=record_id)
+        if not self._eligible_for_semantic_index(record):
+            raise ValueError("Only active approved patient-education knowledge can be retired")
+
+        self._retire_record(record, retired_at=datetime.now(UTC))
+        db.add(
+            self._audit(
+                record,
+                actor_user_id,
+                "dental_knowledge_retired",
+                "success",
+                reason=retirement_reason,
             )
         )
         await db.flush()
@@ -227,6 +301,40 @@ class DentalKnowledgeReviewService:
             and record.retired_at is None
         )
 
+    @staticmethod
+    async def _active_approved_versions(
+        *,
+        db: AsyncSession,
+        clinic_id: UUID,
+        entry_key: str,
+        excluding_id: UUID,
+    ) -> list[PatientAgentDentalKnowledge]:
+        result = await db.execute(
+            select(PatientAgentDentalKnowledge).where(
+                PatientAgentDentalKnowledge.clinic_id == clinic_id,
+                PatientAgentDentalKnowledge.entry_key == entry_key,
+                PatientAgentDentalKnowledge.id != excluding_id,
+                PatientAgentDentalKnowledge.review_status == "approved",
+                PatientAgentDentalKnowledge.active.is_(True),
+                PatientAgentDentalKnowledge.approved_for_patient_education.is_(True),
+                PatientAgentDentalKnowledge.retired_at.is_(None),
+            )
+        )
+        return list(result.scalars().all())
+
+    @staticmethod
+    def _retire_record(
+        record: PatientAgentDentalKnowledge,
+        *,
+        retired_at: datetime,
+    ) -> None:
+        record.active = False
+        record.approved_for_patient_education = False
+        record.retired_at = retired_at
+        record.source_metadata = without_semantic_embedding(
+            getattr(record, "source_metadata", None)
+        )
+
     async def _require_record(
         self,
         *,
@@ -248,6 +356,7 @@ class DentalKnowledgeReviewService:
         *,
         reason: str | None = None,
         semantic_indexed: bool | None = None,
+        replacement: PatientAgentDentalKnowledge | None = None,
     ) -> PatientAgentAuditEvent:
         detail = {
             "knowledge_id": str(record.id),
@@ -258,6 +367,9 @@ class DentalKnowledgeReviewService:
         }
         if semantic_indexed is not None:
             detail["semantic_indexed"] = semantic_indexed
+        if replacement is not None:
+            detail["replacement_knowledge_id"] = str(replacement.id)
+            detail["replacement_version"] = replacement.version
         return PatientAgentAuditEvent(
             session_id=None,
             clinic_id=record.clinic_id,

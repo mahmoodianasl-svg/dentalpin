@@ -8,6 +8,7 @@ related_endpoints:
   - POST /api/v1/patient_agent/knowledge/{record_id}/submit
   - POST /api/v1/patient_agent/knowledge/{record_id}/approve
   - POST /api/v1/patient_agent/knowledge/{record_id}/reject
+  - POST /api/v1/patient_agent/knowledge/{record_id}/retire
 related_permissions:
   - patient_agent.knowledge.read
   - patient_agent.knowledge.review
@@ -28,11 +29,13 @@ Use this screen to review curated patient-education content before it becomes el
 - Submit draft or rejected records for review.
 - Approve content for patient education.
 - Reject content with a required decision reason.
+- Withdraw active approved guidance with a required retirement reason.
 
 ## Permissions
 
 - `patient_agent.knowledge.read` allows staff to view the review queue and record details.
 - `patient_agent.knowledge.review` allows permitted dentist/admin staff to submit, approve, or reject records.
+- Approving a newer version automatically retires the older active version and prevents an older version from replacing newer guidance.
 
 Staff without review permission can read only and cannot change review status.
 

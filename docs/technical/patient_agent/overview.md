@@ -62,6 +62,19 @@ to the clinic and entry key. All locks for a batch are acquired in sorted key or
 writes, preventing duplicate version allocation and avoiding opposing-order batch deadlocks. The
 locks are released automatically when the request transaction commits or rolls back.
 
+## Knowledge publication lifecycle
+
+Approval is a transaction-serialized promotion scoped to the clinic and entry key. Promoting a
+newer reviewed version automatically retires every older active version before the new version is
+made eligible for patient education. An equal or newer active version blocks promotion, preventing
+an out-of-order review from silently rolling patient guidance backward.
+
+Authorized staff may withdraw active approved guidance through
+`POST /api/v1/patient_agent/knowledge/{record_id}/retire` with an explicit reason. Retirement and
+automatic supersession immediately remove patient-education eligibility, set the retirement
+timestamp, invalidate semantic embedding metadata, and create metadata-only audit evidence. The
+historical review status and reviewer evidence remain intact.
+
 ## Lifecycle
 
 The module is installable and removable but has `auto_install=False`. Existing DentalPin behavior therefore remains unchanged until the module is deliberately enabled and later-phase runtime functionality is configured.

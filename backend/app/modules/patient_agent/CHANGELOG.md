@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Enforced single-active-version dental knowledge promotion with transaction-serialized supersession, downgrade protection, explicit source-withdrawal retirement, semantic-index invalidation, and metadata-only audit evidence.
 - Hardened curated corpus ingestion with deterministic per-clinic transaction locks, deadlock-safe batch lock ordering, credential-free HTTPS provenance validation, and bounded finite-JSON source metadata.
 - Added clinic-scoped curated corpus ingestion that creates draft-only inactive knowledge versions, preserves source provenance, strips reserved semantic metadata, skips unchanged entries idempotently, and records metadata-only staff audit events without bypassing dentist review.
 - Added clinic-scoped semantic ranking for approved patient-education knowledge with content-bound embeddings, cosine similarity, deterministic lexical fallback, approval-time indexing, stale-vector invalidation, and a controlled staff reindex endpoint for already-approved knowledge.
