@@ -48,4 +48,5 @@ La aprobación hace que el contenido curado sea elegible para educación al paci
 - **La página te redirige.** Tu rol no tiene `patient_agent.knowledge.read`.
 - **Los botones de revisión no están disponibles.** Tu rol no tiene `patient_agent.knowledge.review`.
 - **No se puede completar el rechazo.** Introduce un motivo de rechazo no vacío.
+- **Una acción de revisión muestra un conflicto.** Otra acción del personal terminó primero. Actualiza el registro y comprueba su estado actual antes de decidir de nuevo.
 - **Un registro desaparece después de cambiar su estado.** El filtro actual ya no incluye ese estado; selecciona el nuevo estado o Todos.

@@ -66,6 +66,25 @@ def _db_for(record: SimpleNamespace) -> tuple[SimpleNamespace, list[object]]:
     return db, added
 
 
+def _db_for_transition(
+    before: SimpleNamespace,
+    after: SimpleNamespace,
+) -> tuple[SimpleNamespace, list[object]]:
+    added: list[object] = []
+    db = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[
+                SimpleNamespace(scalar_one_or_none=lambda: before),
+                SimpleNamespace(),
+                SimpleNamespace(scalar_one_or_none=lambda: after),
+            ]
+        ),
+        add=lambda value: added.append(value),
+        flush=AsyncMock(),
+    )
+    return db, added
+
+
 @pytest.mark.asyncio
 async def test_approval_indexes_content_when_provider_available() -> None:
     record = _record()
@@ -150,6 +169,34 @@ async def test_reindex_requires_current_patient_education_eligibility() -> None:
             record_id=record.id,
             actor_user_id=uuid.uuid4(),
         )
+
+
+@pytest.mark.asyncio
+async def test_reindex_rechecks_eligibility_after_entry_lock() -> None:
+    before = _record(status="approved")
+    before.reviewed_by = uuid.uuid4()
+    before.clinically_reviewed = True
+    before.approved_for_patient_education = True
+    after = _record(status="approved")
+    after.id = before.id
+    after.clinic_id = before.clinic_id
+    after.entry_key = before.entry_key
+    after.reviewed_by = before.reviewed_by
+    after.clinically_reviewed = True
+    after.approved_for_patient_education = False
+    after.active = False
+    db, added = _db_for_transition(before, after)
+
+    with pytest.raises(ValueError, match="Only active approved"):
+        await DentalKnowledgeReviewService(embedding_provider=FakeEmbeddingProvider()).reindex(
+            db=db,
+            clinic_id=before.clinic_id,
+            record_id=before.id,
+            actor_user_id=uuid.uuid4(),
+        )
+
+    assert SEMANTIC_EMBEDDING_KEY not in after.source_metadata
+    assert not added
 
 
 @pytest.mark.asyncio

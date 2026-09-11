@@ -48,7 +48,11 @@ class DentalKnowledgeReviewService:
         record_id: UUID,
         actor_user_id: UUID,
     ) -> PatientAgentDentalKnowledge:
-        record = await self._require_record(db=db, clinic_id=clinic_id, record_id=record_id)
+        record = await self._lock_and_require_record(
+            db=db,
+            clinic_id=clinic_id,
+            record_id=record_id,
+        )
         if record.review_status not in {"draft", "rejected"}:
             raise ValueError("Only draft or rejected knowledge can be submitted")
 
@@ -76,17 +80,11 @@ class DentalKnowledgeReviewService:
         actor_user_id: UUID,
         decision_note: str | None = None,
     ) -> PatientAgentDentalKnowledge:
-        candidate = await self._require_record(
+        record = await self._lock_and_require_record(
             db=db,
             clinic_id=clinic_id,
             record_id=record_id,
         )
-        await lock_dental_knowledge_entries(
-            db=db,
-            clinic_id=clinic_id,
-            entry_keys=[candidate.entry_key],
-        )
-        record = await self._require_record(db=db, clinic_id=clinic_id, record_id=record_id)
         if record.review_status != "in_review":
             raise ValueError("Only in-review knowledge can be approved")
 
@@ -147,17 +145,11 @@ class DentalKnowledgeReviewService:
         if not retirement_reason:
             raise ValueError("Retirement reason is required")
 
-        candidate = await self._require_record(
+        record = await self._lock_and_require_record(
             db=db,
             clinic_id=clinic_id,
             record_id=record_id,
         )
-        await lock_dental_knowledge_entries(
-            db=db,
-            clinic_id=clinic_id,
-            entry_keys=[candidate.entry_key],
-        )
-        record = await self._require_record(db=db, clinic_id=clinic_id, record_id=record_id)
         if not self._eligible_for_semantic_index(record):
             raise ValueError("Only active approved patient-education knowledge can be retired")
 
@@ -187,7 +179,11 @@ class DentalKnowledgeReviewService:
         if not reason:
             raise ValueError("Rejection reason is required")
 
-        record = await self._require_record(db=db, clinic_id=clinic_id, record_id=record_id)
+        record = await self._lock_and_require_record(
+            db=db,
+            clinic_id=clinic_id,
+            record_id=record_id,
+        )
         if record.review_status != "in_review":
             raise ValueError("Only in-review knowledge can be rejected")
 
@@ -220,7 +216,11 @@ class DentalKnowledgeReviewService:
         record_id: UUID,
         actor_user_id: UUID,
     ) -> PatientAgentDentalKnowledge:
-        record = await self._require_record(db=db, clinic_id=clinic_id, record_id=record_id)
+        record = await self._lock_and_require_record(
+            db=db,
+            clinic_id=clinic_id,
+            record_id=record_id,
+        )
         if not self._eligible_for_semantic_index(record):
             raise ValueError("Only active approved patient-education knowledge can be reindexed")
         provider = self._embedding_provider
@@ -345,6 +345,34 @@ class DentalKnowledgeReviewService:
         record = await self.get_record(db=db, clinic_id=clinic_id, record_id=record_id)
         if record is None:
             raise LookupError("Dental knowledge record not found")
+        return record
+
+    async def _lock_and_require_record(
+        self,
+        *,
+        db: AsyncSession,
+        clinic_id: UUID,
+        record_id: UUID,
+    ) -> PatientAgentDentalKnowledge:
+        """Lock the entry lifecycle and refetch its current transition state."""
+
+        candidate = await self._require_record(
+            db=db,
+            clinic_id=clinic_id,
+            record_id=record_id,
+        )
+        await lock_dental_knowledge_entries(
+            db=db,
+            clinic_id=clinic_id,
+            entry_keys=[candidate.entry_key],
+        )
+        record = await self._require_record(
+            db=db,
+            clinic_id=clinic_id,
+            record_id=record_id,
+        )
+        if record.entry_key != candidate.entry_key:
+            raise ValueError("Dental knowledge entry changed during transition")
         return record
 
     @staticmethod
