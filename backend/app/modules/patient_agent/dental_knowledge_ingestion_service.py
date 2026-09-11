@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .dental_knowledge_ingestion_schemas import (
@@ -36,6 +37,11 @@ class DentalKnowledgeCorpusIngestionService:
         payload: DentalKnowledgeCorpusImportRequest,
     ) -> DentalKnowledgeCorpusImportResult:
         self._ensure_unique_entry_keys(payload)
+        await self._lock_entry_keys(
+            db=db,
+            clinic_id=clinic_id,
+            entry_keys=(entry.entry_key for entry in payload.entries),
+        )
 
         created: list[PatientAgentDentalKnowledge] = []
         skipped: list[PatientAgentDentalKnowledge] = []
@@ -128,6 +134,34 @@ class DentalKnowledgeCorpusIngestionService:
             raise ValueError(f"Duplicate corpus entry_key values: {joined}")
 
     @staticmethod
+    async def _lock_entry_keys(
+        *,
+        db: AsyncSession,
+        clinic_id: UUID,
+        entry_keys: Iterable[str],
+    ) -> None:
+        """Serialize version allocation without creating persistent lock rows.
+
+        PostgreSQL transaction-level advisory locks are held through the request
+        commit/rollback boundary. Sorting prevents two overlapping batches from
+        acquiring the same keys in opposite order and deadlocking.
+        """
+        for entry_key in sorted(set(entry_keys)):
+            lock_key = DentalKnowledgeCorpusIngestionService._lock_key(
+                clinic_id=clinic_id,
+                entry_key=entry_key,
+            )
+            await db.execute(
+                text("SELECT pg_advisory_xact_lock(:lock_key)"),
+                {"lock_key": lock_key},
+            )
+
+    @staticmethod
+    def _lock_key(*, clinic_id: UUID, entry_key: str) -> int:
+        digest = hashlib.sha256(f"{clinic_id}:{entry_key}".encode()).digest()
+        return int.from_bytes(digest[:8], byteorder="big", signed=True)
+
+    @staticmethod
     async def _latest_record(
         *,
         db: AsyncSession,
@@ -199,7 +233,6 @@ class DentalKnowledgeCorpusIngestionService:
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
-            default=str,
         ).encode("utf-8")
         return hashlib.sha256(canonical).hexdigest()
 
