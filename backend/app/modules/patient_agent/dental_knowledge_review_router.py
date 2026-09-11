@@ -18,6 +18,7 @@ from .dental_knowledge_ingestion_schemas import (
 from .dental_knowledge_ingestion_service import DentalKnowledgeCorpusIngestionService
 from .dental_knowledge_review_schemas import (
     DentalKnowledgeRejectDecision,
+    DentalKnowledgeRetireDecision,
     DentalKnowledgeReviewDecision,
     DentalKnowledgeReviewResponse,
 )
@@ -170,6 +171,28 @@ async def reject_dental_knowledge(
         record_id=record_id,
         actor_user_id=ctx.user_id,
         decision_note=payload.decision_note,
+    )
+    return ApiResponse(data=DentalKnowledgeReviewResponse.model_validate(record))
+
+
+@review_router.post(
+    "/{record_id}/retire",
+    response_model=ApiResponse[DentalKnowledgeReviewResponse],
+)
+async def retire_dental_knowledge(
+    record_id: UUID,
+    payload: DentalKnowledgeRetireDecision,
+    ctx: Annotated[ClinicContext, Depends(get_clinic_context)],
+    _: Annotated[None, Depends(require_permission("patient_agent.knowledge.review"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ApiResponse[DentalKnowledgeReviewResponse]:
+    record = await _transition(
+        DentalKnowledgeReviewService().retire,
+        db=db,
+        clinic_id=ctx.clinic_id,
+        record_id=record_id,
+        actor_user_id=ctx.user_id,
+        reason=payload.reason,
     )
     return ApiResponse(data=DentalKnowledgeReviewResponse.model_validate(record))
 

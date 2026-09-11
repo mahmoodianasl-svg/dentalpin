@@ -15,6 +15,10 @@ class DentalKnowledgeRejectDecision(BaseModel):
     decision_note: str = Field(min_length=1, max_length=4000)
 
 
+class DentalKnowledgeRetireDecision(BaseModel):
+    reason: str = Field(min_length=1, max_length=4000)
+
+
 class DentalKnowledgeReviewResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

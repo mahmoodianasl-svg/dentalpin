@@ -56,5 +56,11 @@ export function useDentalKnowledgeReview() {
     })
   }
 
-  return { list, get, submit, approve, reject }
+  async function retire(id: string, reason: string): Promise<ApiEnvelope<DentalKnowledgeReviewRecord>> {
+    return await api.post<ApiEnvelope<DentalKnowledgeReviewRecord>>(`${base}/${id}/retire`, {
+      reason: reason.trim()
+    })
+  }
+
+  return { list, get, submit, approve, reject, retire }
 }

@@ -6,12 +6,16 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .dental_knowledge_ingestion_schemas import (
     DentalKnowledgeCorpusEntry,
     DentalKnowledgeCorpusImportRequest,
+)
+from .dental_knowledge_locks import (
+    dental_knowledge_lock_key,
+    lock_dental_knowledge_entries,
 )
 from .models import PatientAgentAuditEvent, PatientAgentDentalKnowledge
 from .semantic_embeddings import SEMANTIC_EMBEDDING_KEY
@@ -146,20 +150,15 @@ class DentalKnowledgeCorpusIngestionService:
         commit/rollback boundary. Sorting prevents two overlapping batches from
         acquiring the same keys in opposite order and deadlocking.
         """
-        for entry_key in sorted(set(entry_keys)):
-            lock_key = DentalKnowledgeCorpusIngestionService._lock_key(
-                clinic_id=clinic_id,
-                entry_key=entry_key,
-            )
-            await db.execute(
-                text("SELECT pg_advisory_xact_lock(:lock_key)"),
-                {"lock_key": lock_key},
-            )
+        await lock_dental_knowledge_entries(
+            db=db,
+            clinic_id=clinic_id,
+            entry_keys=entry_keys,
+        )
 
     @staticmethod
     def _lock_key(*, clinic_id: UUID, entry_key: str) -> int:
-        digest = hashlib.sha256(f"{clinic_id}:{entry_key}".encode()).digest()
-        return int.from_bytes(digest[:8], byteorder="big", signed=True)
+        return dental_knowledge_lock_key(clinic_id=clinic_id, entry_key=entry_key)
 
     @staticmethod
     async def _latest_record(
