@@ -46,6 +46,22 @@ Consent types are modeled separately for AI interaction, audio, video, and recor
 
 Significant patient-agent events are persisted with clinic, patient/session context, actor type, outcome, detail, reason, and timestamp. Later tranches must record tool invocation, confirmation, handoff, provider-session lifecycle, and other material actions.
 
+## Curated knowledge ingestion
+
+Staff with `patient_agent.knowledge.review` may import a bounded curated corpus through
+`POST /api/v1/patient_agent/knowledge/corpus/import`. Imported knowledge is always an inactive
+draft and remains ineligible for patient education until the existing dentist review workflow
+approves it.
+
+Each source reference must be an absolute credential-free HTTPS URL. Source metadata must be
+finite JSON and is capped at 32 KiB per entry; caller-supplied semantic embedding and ingestion
+metadata remain reserved and are replaced by server-derived provenance.
+
+Version allocation is serialized by a deterministic PostgreSQL transaction advisory lock scoped
+to the clinic and entry key. All locks for a batch are acquired in sorted key order before reads or
+writes, preventing duplicate version allocation and avoiding opposing-order batch deadlocks. The
+locks are released automatically when the request transaction commits or rolls back.
+
 ## Lifecycle
 
 The module is installable and removable but has `auto_install=False`. Existing DentalPin behavior therefore remains unchanged until the module is deliberately enabled and later-phase runtime functionality is configured.
