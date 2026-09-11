@@ -23,7 +23,7 @@ from app.core.log_context import (
     set_request_context,
     setup_logging,
 )
-from app.core.plugins.loader import load_modules
+from app.core.plugins.loader import activate_modules, discover_module_catalog
 from app.core.plugins.processor import PendingProcessor
 from app.core.plugins.service import ModuleService
 from app.core.scheduler import init_scheduler, shutdown_scheduler
@@ -42,15 +42,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # (defaults to ``-`` outside a request).
     setup_logging()
 
-    # Startup
-    load_modules(app)
+    # Discovery is inventory-only. No module receives runtime capabilities
+    # until its persisted state has been read successfully below.
+    discover_module_catalog()
 
-    # Sync in-memory registry into core_module (best-effort).
+    # Persisted module state is a security boundary. If it cannot be read and
+    # reconciled, abort startup instead of falling back to code discovery.
     try:
         async with async_session_maker() as session:
             await ModuleService(session).reconcile_with_db()
-    except Exception:
-        logger.exception("Module registry reconciliation failed at startup")
+    except Exception as exc:
+        logger.exception("Module activation state unavailable; aborting startup")
+        raise RuntimeError("Persisted module activation state is unavailable") from exc
 
     # Process pending install/uninstall/upgrade operations.
     try:
@@ -60,6 +63,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.info("Processed pending module operations: %s", processed)
     except Exception:
         logger.exception("Pending module processor raised")
+
+    try:
+        async with async_session_maker() as session:
+            installed_names = await ModuleService(session).installed_names()
+    except Exception as exc:
+        logger.exception("Unable to read installed modules; aborting startup")
+        raise RuntimeError("Persisted module activation state is unavailable") from exc
+
+    activate_modules(app, installed_names)
 
     # Initialize scheduler for background jobs
     init_scheduler()

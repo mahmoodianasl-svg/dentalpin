@@ -106,7 +106,7 @@ class PendingProcessor:
             )
             installed_names = {r.name for r in result.scalars()}
 
-        for module in module_registry.list_modules():
+        for module in module_registry.list_discovered():
             if module.name in installed_names:
                 installed.append(module)
 
@@ -157,7 +157,7 @@ class PendingProcessor:
     # --- Install --------------------------------------------------------
 
     async def _install(self, record: ModuleRecord) -> None:
-        module = module_registry.get(record.name)
+        module = module_registry.get_discovered(record.name)
         if module is None:
             raise RuntimeError(f"Cannot install {record.name}: not in in-memory registry")
 
@@ -208,7 +208,7 @@ class PendingProcessor:
     # --- Upgrade --------------------------------------------------------
 
     async def _upgrade(self, record: ModuleRecord) -> None:
-        module = module_registry.get(record.name)
+        module = module_registry.get_discovered(record.name)
         if module is None:
             raise RuntimeError(f"Cannot upgrade {record.name}: not in in-memory registry")
 
@@ -257,7 +257,7 @@ class PendingProcessor:
     # --- Uninstall ------------------------------------------------------
 
     async def _remove(self, record: ModuleRecord) -> None:
-        module = module_registry.get(record.name)
+        module = module_registry.get_discovered(record.name)
         tables = _tables_for(module) if module else []
 
         backup_log = await self._op_log.started(
