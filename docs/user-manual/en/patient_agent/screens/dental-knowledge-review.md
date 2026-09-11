@@ -48,4 +48,5 @@ Approval makes curated content eligible for patient education. It does not autho
 - **The page redirects away.** Your role does not have `patient_agent.knowledge.read`.
 - **Review buttons are unavailable.** Your role does not have `patient_agent.knowledge.review`.
 - **Reject does not complete.** Enter a non-empty rejection reason.
+- **A review action reports a conflict.** Another staff action completed first. Refresh the record and review its current status before deciding again.
 - **A record disappears after a status change.** The current status filter no longer includes the record; choose the new status or All.

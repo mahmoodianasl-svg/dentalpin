@@ -71,6 +71,7 @@ None currently declared as module events.
 - Knowledge surfaced to patients must remain within the reviewed/published knowledge boundary and preserve source attribution/fallback behavior.
 - At most one approved version of an entry may be active for patient education. Approval serializes on the clinic and entry key, retires older versions, and must never replace an equal or newer active version.
 - Withdrawing approved knowledge requires an explicit staff reason, clears patient-education eligibility and semantic index data, and emits metadata-only audit evidence.
+- Submit, approve, reject, retire, and semantic-reindex operations must share the clinic/entry transaction lock and re-read state after locking; a stale concurrent action must fail instead of overwriting the winning transition.
 
 ## Related ADRs
 

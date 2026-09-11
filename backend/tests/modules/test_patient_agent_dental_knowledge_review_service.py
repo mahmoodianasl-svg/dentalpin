@@ -45,6 +45,17 @@ def _db_for(record, *, active_versions=()):
     )
 
 
+def _db_for_transition(before, after):
+    before_result = SimpleNamespace(scalar_one_or_none=lambda: before)
+    lock_result = SimpleNamespace()
+    after_result = SimpleNamespace(scalar_one_or_none=lambda: after)
+    return SimpleNamespace(
+        execute=AsyncMock(side_effect=[before_result, lock_result, after_result]),
+        add=lambda value: added.append(value),
+        flush=AsyncMock(),
+    )
+
+
 added = []
 
 
@@ -73,6 +84,7 @@ async def test_submit_records_actor_and_clears_prior_review_metadata() -> None:
     assert result.reviewed_by is None
     assert result.decision_note is None
     assert any(isinstance(item, PatientAgentAuditEvent) for item in added)
+    assert "pg_advisory_xact_lock" in str(db.execute.await_args_list[1].args[0])
 
 
 async def test_approve_sets_named_reviewer_and_patient_education_flags() -> None:
@@ -201,6 +213,30 @@ async def test_reject_requires_reason_and_clears_approval_flags() -> None:
     assert result.review_status == "rejected"
     assert result.clinically_reviewed is False
     assert result.approved_for_patient_education is False
+
+
+async def test_reject_rechecks_transition_state_after_entry_lock() -> None:
+    before = _record(status="in_review")
+    after = _record(status="approved", clinic_id=before.clinic_id)
+    after.id = before.id
+    after.entry_key = before.entry_key
+    after.clinically_reviewed = True
+    after.approved_for_patient_education = True
+    after.reviewed_by = uuid.uuid4()
+    db = _db_for_transition(before, after)
+
+    with pytest.raises(ValueError, match="Only in-review"):
+        await DentalKnowledgeReviewService().reject(
+            db=db,
+            clinic_id=before.clinic_id,
+            record_id=before.id,
+            actor_user_id=uuid.uuid4(),
+            decision_note="Outdated source",
+        )
+
+    assert after.review_status == "approved"
+    assert after.approved_for_patient_education is True
+    assert not added
 
 
 async def test_invalid_state_transition_is_rejected() -> None:

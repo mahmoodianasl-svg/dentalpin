@@ -75,6 +75,12 @@ automatic supersession immediately remove patient-education eligibility, set the
 timestamp, invalidate semantic embedding metadata, and create metadata-only audit evidence. The
 historical review status and reviewer evidence remain intact.
 
+All review lifecycle mutations—submit, approve, reject, retire, and semantic reindex—acquire the
+same clinic-and-entry transaction advisory lock. Each operation refetches the record after the lock
+is granted and validates the transition against that current state. Concurrent staff actions
+therefore resolve in lock order, and a stale action returns a conflict instead of overwriting a
+completed decision or restoring semantic data after retirement.
+
 ## Lifecycle
 
 The module is installable and removable but has `auto_install=False`. Existing DentalPin behavior therefore remains unchanged until the module is deliberately enabled and later-phase runtime functionality is configured.

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Serialized every dental-knowledge review and semantic-index transition on the clinic/entry lifecycle lock, with a post-lock state refetch that rejects stale concurrent staff actions.
 - Enforced single-active-version dental knowledge promotion with transaction-serialized supersession, downgrade protection, explicit source-withdrawal retirement, semantic-index invalidation, and metadata-only audit evidence.
 - Hardened curated corpus ingestion with deterministic per-clinic transaction locks, deadlock-safe batch lock ordering, credential-free HTTPS provenance validation, and bounded finite-JSON source metadata.
 - Added clinic-scoped curated corpus ingestion that creates draft-only inactive knowledge versions, preserves source provenance, strips reserved semantic metadata, skips unchanged entries idempotently, and records metadata-only staff audit events without bypassing dentist review.
