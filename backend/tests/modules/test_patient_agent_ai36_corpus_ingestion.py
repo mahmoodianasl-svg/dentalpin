@@ -18,7 +18,7 @@ from app.modules.patient_agent.models import PatientAgentAuditEvent, PatientAgen
 from app.modules.patient_agent.semantic_embeddings import SEMANTIC_EMBEDDING_KEY
 
 
-def _payload(*, content: str = "Brush twice daily with fluoride toothpaste.") -> DentalKnowledgeCorpusImportRequest:
+def _payload(\n    *, content: str = "Brush twice daily with fluoride toothpaste."\n) -> DentalKnowledgeCorpusImportRequest:
     return DentalKnowledgeCorpusImportRequest(
         corpus_id="ada-preventive",
         corpus_version="2026-09",
