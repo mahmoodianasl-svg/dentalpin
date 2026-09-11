@@ -14,9 +14,10 @@ Discovery happens in two stages:
    that an entry point already provided, so entry points win when both
    are present.
 
-The public entry point for the rest of the app is :func:`load_modules`,
-which discovers, resolves dependencies, and mounts everything in one
-call.
+Production startup first builds a discovery-only catalog, reconciles it with
+``core_module``, and then activates only persisted ``installed`` modules.
+The convenience :func:`load_modules` entry point keeps those phases together
+for isolated test harnesses.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from __future__ import annotations
 import importlib
 import logging
 import pkgutil
+from collections.abc import Collection
 from importlib import metadata
 from pathlib import Path
 
@@ -161,12 +163,12 @@ def _mount_modules(app: FastAPI, modules: list[BaseModule]) -> None:
         tool_registry.register_from(module)
 
 
-def load_modules(app: FastAPI) -> None:
-    """Discover, resolve dependencies, and load all modules."""
+def discover_module_catalog() -> list[BaseModule]:
+    """Discover module code without granting any runtime capability."""
     modules = discover_modules()
     if not modules:
         logger.warning("No modules discovered")
-        return
+        return []
 
     try:
         ordered = _resolve_load_order(modules)
@@ -174,5 +176,56 @@ def load_modules(app: FastAPI) -> None:
         logger.error("Failed to resolve module dependencies: %s", exc)
         raise
 
-    _mount_modules(app, ordered)
-    logger.info("Loaded %d modules: %s", len(ordered), [m.name for m in ordered])
+    for module in ordered:
+        module_registry.register_discovered(module)
+
+    logger.info("Discovered %d modules: %s", len(ordered), [m.name for m in ordered])
+    return ordered
+
+
+def activate_modules(app: FastAPI, installed_names: Collection[str]) -> None:
+    """Mount runtime capabilities for the persisted installed allowlist."""
+    installed = set(installed_names)
+    discovered = module_registry.list_discovered()
+    by_name = {module.name: module for module in discovered}
+
+    missing_code = installed - set(by_name)
+    if missing_code:
+        raise RuntimeError("Installed module code is missing: " + ", ".join(sorted(missing_code)))
+
+    missing_dependencies = {
+        (name, dependency)
+        for name in installed
+        for dependency in by_name[name].dependencies
+        if dependency not in installed
+    }
+    if missing_dependencies:
+        detail = ", ".join(
+            f"{name} requires {dependency}" for name, dependency in sorted(missing_dependencies)
+        )
+        raise RuntimeError(f"Installed module dependency is inactive: {detail}")
+
+    active = [module for module in _resolve_load_order(discovered) if module.name in installed]
+    _mount_modules(app, active)
+    logger.info("Activated %d modules: %s", len(active), [m.name for m in active])
+
+
+def load_modules(
+    app: FastAPI,
+    *,
+    installed_names: Collection[str] | None = None,
+) -> None:
+    """Discover modules and activate only the requested set.
+
+    ``installed_names=None`` retains the explicit all-active mode used by the
+    isolated test harness. Production startup supplies the names read from
+    ``core_module``; an empty set therefore activates nothing.
+    """
+    ordered = discover_module_catalog()
+    if not ordered:
+        return
+
+    activate_modules(
+        app,
+        [module.name for module in ordered] if installed_names is None else installed_names,
+    )

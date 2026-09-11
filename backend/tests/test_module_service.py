@@ -77,6 +77,19 @@ async def test_list_modules_combines_disk_and_db(db_session: AsyncSession) -> No
 
 
 @pytest.mark.asyncio
+async def test_installed_names_returns_only_persisted_runtime_allowlist(
+    db_session: AsyncSession,
+) -> None:
+    svc = ModuleService(db_session)
+    await svc.reconcile_with_db()
+
+    installed = await svc.installed_names()
+
+    assert "patients" in installed
+    assert "patient_agent" not in installed
+
+
+@pytest.mark.asyncio
 async def test_doctor_flags_orphans(db_session: AsyncSession) -> None:
     svc = ModuleService(db_session)
     await svc.reconcile_with_db()

@@ -663,6 +663,12 @@ Every step is logged to `core_module_operation_log` with
 `started/completed/failed`. Crashes leave a trail; the next restart
 can detect and retry.
 
+The database state is authoritative at every restart. Discovery only makes a
+module visible to lifecycle administration; it does not activate it. After
+pending operations finish, only persisted `installed` modules contribute
+routers, permissions, event handlers, agent tools, or scheduled jobs. Startup
+fails closed if that allowlist cannot be read or has a missing dependency.
+
 ### External IDs
 
 `core_external_id` tracks every seed record. On `uninstall` every row

@@ -182,6 +182,11 @@ topological order before accepting traffic. Errors per module are
 recorded in `core_module.error_message`; the rest of the stack still
 comes up.
 
+Module state itself is fail-closed. If DentalPin cannot read `core_module`, it
+does not activate module routes, permissions, event handlers, AI tools, or
+scheduled jobs and the backend startup fails. Restore database connectivity
+and restart; code merely being present on disk never enables a module.
+
 ---
 
 ## 7. Frontend rebuilds

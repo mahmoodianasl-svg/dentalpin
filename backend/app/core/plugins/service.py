@@ -117,17 +117,17 @@ class ModuleService:
     # --- Discovery + reconciliation -------------------------------------
 
     def discovered(self) -> list[BaseModule]:
-        """Return modules currently loaded in the in-memory registry."""
-        return module_registry.list_modules()
+        """Return all module code found on disk, active or inactive."""
+        return module_registry.list_discovered()
 
     async def reconcile_with_db(self) -> None:
         """Ensure ``core_module`` contains one row per discovered module.
 
-        For v1 (Etapa 1): discovered modules that are new in the DB are
-        inserted as ``installed`` (their routers/handlers are already
-        mounted by :func:`load_modules`, so they are effectively live).
-        Discovered modules already in the DB have their ``version`` +
-        ``manifest_snapshot`` refreshed if the version changed.
+        Discovered modules that are new in the DB receive their manifest's
+        declared initial state. Runtime activation happens only after this
+        transaction succeeds and reads the resulting ``installed`` allowlist.
+        Existing records have their ``version`` + ``manifest_snapshot``
+        refreshed if the version changed.
 
         Modules present in DB but missing from disk are left alone here
         — :meth:`doctor` surfaces them as orphans.
@@ -235,6 +235,13 @@ class ModuleService:
     async def _load_existing_records(self) -> dict[str, ModuleRecord]:
         result = await self.db.execute(select(ModuleRecord))
         return {r.name: r for r in result.scalars()}
+
+    async def installed_names(self) -> set[str]:
+        """Return the persisted runtime activation allowlist."""
+        result = await self.db.execute(
+            select(ModuleRecord.name).where(ModuleRecord.state == ModuleState.INSTALLED.value)
+        )
+        return set(result.scalars())
 
     # --- Query ----------------------------------------------------------
 
@@ -551,7 +558,7 @@ class ModuleService:
     # --- Helpers --------------------------------------------------------
 
     def _require_discovered(self, name: str) -> BaseModule:
-        module = module_registry.get(name)
+        module = module_registry.get_discovered(name)
         if module is None:
             raise ModuleOperationError(f"Module '{name}' is not discovered; cannot operate on it.")
         return module
@@ -566,7 +573,7 @@ class ModuleService:
             current_name = stack.pop()
             if current_name in closure:
                 continue
-            module = module_registry.get(current_name)
+            module = module_registry.get_discovered(current_name)
             if module is None:
                 raise ModuleOperationError(
                     f"Missing dependency '{current_name}' (required by '{name}')"
@@ -598,11 +605,10 @@ class ModuleService:
 async def rediscover_and_reconcile(db: AsyncSession) -> None:
     """Entry point used by the app lifespan.
 
-    Assumes :func:`load_modules` already ran and filled the in-memory
-    registry; this just mirrors the current state into ``core_module``.
+    Assumes discovery already filled the administrative module catalog; this
+    mirrors that catalog into ``core_module``.
     """
-    svc = ModuleService(db)
-    await svc.reconcile_with_db()
-    # Also discover here in case `discover_modules()` was not called yet.
-    if not module_registry.list_modules():
-        discover_modules()
+    if not module_registry.list_discovered():
+        for module in discover_modules():
+            module_registry.register_discovered(module)
+    await ModuleService(db).reconcile_with_db()

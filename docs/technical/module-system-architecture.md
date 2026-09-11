@@ -109,6 +109,7 @@ Nota: algunos de estos (`catalog`, `budget`, `billing`, `notifications`, `treatm
 - UI muestra badge persistente "N módulos pendientes de reinicio. [Reiniciar ahora]".
 - Botón llama a endpoint `POST /api/modules/restart` → el proceso llama `sys.exit(0)` controlado → Docker `restart: unless-stopped` respawna en 3-5 segundos.
 - Al arrancar, el `lifespan` del FastAPI procesa todos los `to_*` antes de aceptar tráfico. Si falla un módulo, se loguea, se marca en `core_module.error_message`, y el resto arranca sin él.
+- Discovery no equivale a activación: el código en disco entra primero en un catálogo administrativo. Solo filas persistidas con `core_module.state = installed` montan routers, permisos, handlers, tools y jobs. Si el estado persistido no puede leerse, el backend aborta el arranque sin activar módulos.
 - Modo dev: `uvicorn --reload` detecta cambios en archivos y reinicia automáticamente. Mismo flujo.
 - Sin graceful restart vía señales (SIGHUP, SIGUSR2) en v1. Complejidad innecesaria.
 
