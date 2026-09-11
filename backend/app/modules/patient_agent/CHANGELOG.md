@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added clinic-scoped curated corpus ingestion that creates draft-only inactive knowledge versions, preserves source provenance, strips reserved semantic metadata, skips unchanged entries idempotently, and records metadata-only staff audit events without bypassing dentist review.
 - Added clinic-scoped semantic ranking for approved patient-education knowledge with content-bound embeddings, cosine similarity, deterministic lexical fallback, approval-time indexing, stale-vector invalidation, and a controlled staff reindex endpoint for already-approved knowledge.
 - Added metadata-only realtime tool and safety-decision audit coverage: patient knowledge searches now persist success/fallback outcomes without raw queries; intake-risk decisions record tool/action provenance; automatic escalation is attributed to the system; and handoff audits no longer persist raw patient summaries.
 - Added server-side deterministic intake-risk assessment for structured patient safety signals; urgent and emergency-risk assessments automatically trigger human handoff, and an existing higher-risk session state cannot be downgraded by later lower-risk input.

@@ -11,6 +11,11 @@ from app.core.auth.dependencies import ClinicContext, get_clinic_context, requir
 from app.core.schemas import ApiResponse
 from app.database import get_db
 
+from .dental_knowledge_ingestion_schemas import (
+    DentalKnowledgeCorpusImportRequest,
+    DentalKnowledgeCorpusImportResponse,
+)
+from .dental_knowledge_ingestion_service import DentalKnowledgeCorpusIngestionService
 from .dental_knowledge_review_schemas import (
     DentalKnowledgeRejectDecision,
     DentalKnowledgeReviewDecision,
@@ -50,6 +55,38 @@ async def list_dental_knowledge(
     records = result.scalars().all()
     return ApiResponse(
         data=[DentalKnowledgeReviewResponse.model_validate(record) for record in records]
+    )
+
+
+@review_router.post(
+    "/corpus/import",
+    response_model=ApiResponse[DentalKnowledgeCorpusImportResponse],
+)
+async def import_dental_knowledge_corpus(
+    payload: DentalKnowledgeCorpusImportRequest,
+    ctx: Annotated[ClinicContext, Depends(get_clinic_context)],
+    _: Annotated[None, Depends(require_permission("patient_agent.knowledge.review"))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ApiResponse[DentalKnowledgeCorpusImportResponse]:
+    try:
+        result = await DentalKnowledgeCorpusIngestionService().ingest(
+            db=db,
+            clinic_id=ctx.clinic_id,
+            actor_user_id=ctx.user_id,
+            payload=payload,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    records = [*result.created, *result.skipped]
+    return ApiResponse(
+        data=DentalKnowledgeCorpusImportResponse(
+            corpus_id=result.corpus_id,
+            corpus_version=result.corpus_version,
+            created_count=len(result.created),
+            skipped_count=len(result.skipped),
+            records=[DentalKnowledgeReviewResponse.model_validate(record) for record in records],
+        )
     )
 
 
