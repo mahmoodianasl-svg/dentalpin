@@ -21,9 +21,11 @@ const props = defineProps<{
 }>()
 
 const { can } = usePermissions()
+const { active } = useModules()
 
 const entries = computed(() => {
-  const all = resolveSlot<Ctx>(props.name, props.ctx, { can })
+  const activeModules = new Set((active.value ?? []).map(module => module.name))
+  const all = resolveSlot<Ctx>(props.name, props.ctx, { can, activeModules })
   if (!props.categoryFilter) return all
   const filter = props.categoryFilter
   return all.filter((entry) => {

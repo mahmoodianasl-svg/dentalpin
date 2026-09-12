@@ -6,6 +6,7 @@ import { registerSettingsPage } from '~~/app/composables/useSettingsRegistry'
 
 export default defineNuxtPlugin(() => {
   registerSettingsPage({
+    module: 'whatsapp_kapso',
     path: 'whatsapp-kapso',
     category: 'integrations',
     labelKey: 'whatsapp_kapso.settings.title',

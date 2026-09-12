@@ -9,6 +9,7 @@ import { registerSettingsPage } from '~~/app/composables/useSettingsRegistry'
 
 export default defineNuxtPlugin(() => {
   registerSettingsPage({
+    module: 'migration_import',
     path: 'data-migration',
     category: 'workspace',
     labelKey: 'migrationImport.settingsCard.title',

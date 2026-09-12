@@ -10,6 +10,7 @@ import { registerSettingsPage } from '~~/app/composables/useSettingsRegistry'
 
 export default defineNuxtPlugin(() => {
   registerSettingsPage({
+    module: 'copilot',
     path: 'copilot',
     category: 'integrations',
     labelKey: 'copilot.settings.title',

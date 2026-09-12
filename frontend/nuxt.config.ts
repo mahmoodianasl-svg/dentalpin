@@ -1,6 +1,10 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
-import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { annotateModulePages, loadModuleLayerEntries } from './module-layers'
+
+const modulesJsonPath = process.env.DENTALPIN_MODULES_JSON
+  ? resolve(process.env.DENTALPIN_MODULES_JSON)
+  : resolve(__dirname, 'modules.json')
 
 /**
  * Load Nuxt Layer paths from `modules.json`.
@@ -9,12 +13,9 @@ import { resolve } from 'node:path'
  * `manifest.frontend.layer_path` is installed. When absent (fresh
  * checkout, no community modules yet), returns an empty array.
  */
-function loadModuleLayers(): string[] {
-  const path = resolve(__dirname, 'modules.json')
+function loadModuleLayers() {
   try {
-    const raw = readFileSync(path, 'utf-8')
-    const payload = JSON.parse(raw) as { layers?: string[] }
-    return Array.isArray(payload.layers) ? payload.layers : []
+    return loadModuleLayerEntries(modulesJsonPath)
   } catch (err: unknown) {
     const code = (err as { code?: string }).code
     if (code !== 'ENOENT') {
@@ -24,8 +25,8 @@ function loadModuleLayers(): string[] {
   }
 }
 
-const moduleLayers = loadModuleLayers()
-const modulesJsonPath = resolve(__dirname, 'modules.json')
+const moduleLayerEntries = loadModuleLayers()
+const moduleLayers = moduleLayerEntries.map(entry => entry.path)
 
 export default defineNuxtConfig({
 
@@ -100,6 +101,12 @@ export default defineNuxtConfig({
         '@vue/devtools-core',
         '@vue/devtools-kit'
       ]
+    }
+  },
+
+  hooks: {
+    'pages:extend'(pages) {
+      annotateModulePages(pages, moduleLayerEntries)
     }
   },
 

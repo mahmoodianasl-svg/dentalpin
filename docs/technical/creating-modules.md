@@ -632,6 +632,7 @@ import { registerSlot } from '~/composables/useModuleSlots'
 
 registerSlot('patient.detail.sidebar', {
   id: 'inventory.patient.sidebar',   // stable, unique
+  module: 'inventory',
   component: defineAsyncComponent(() => import('./components/InventoryWidget.vue')),
   order: 30,
   permission: 'inventory.items.read',
@@ -669,6 +670,26 @@ pending operations finish, only persisted `installed` modules contribute
 routers, permissions, event handlers, agent tools, or scheduled jobs. Startup
 fails closed if that allowlist cannot be read or has a missing dependency.
 
+### Production frontend boundary
+
+Nuxt module layers are a **build-time catalog**. The production frontend image
+compiles every layer shipped in that image; a backend restart never downloads
+or compiles frontend code. Persisted `installed` state then controls which
+compiled capabilities are usable:
+
+- build hooks tag every module-owned page with its owning module;
+- the global route guard returns 404 for a module that is not installed;
+- unauthenticated module routes use the minimal public
+  `GET /api/v1/modules/-/active-names` inventory, which exposes names only;
+- module slots and settings entries are filtered by the same active-module
+  response; and
+- inability to read activation state fails closed instead of exposing a
+  compiled module route.
+
+Adding or upgrading a module package that contains a Nuxt layer therefore
+requires rebuilding and redeploying the frontend image. A backend-only restart
+can activate only frontend code already present in that build.
+
 ### External IDs
 
 `core_external_id` tracks every seed record. On `uninstall` every row
@@ -678,7 +699,8 @@ module's tables to `storage/backups/`).
 ### Explicit restart
 
 Modules never hot-load. CLI responses and REST endpoints always return
-"restart required" after a state change. Restart via:
+"restart required" after a state change. This applies backend lifecycle state;
+it does not rebuild a production Nuxt image. Restart via:
 
 - REST: `POST /api/v1/modules/-/restart`
 - CLI hint: `./bin/dentalpin modules rebuild-frontend`

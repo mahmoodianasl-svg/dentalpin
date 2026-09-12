@@ -27,7 +27,7 @@ this README is the tour of *core/plugins itself*.
 | `external_id.py` | `ExternalIdHelper` for cross-module logical links without DB-level FKs (preserves uninstall safety). |
 | `alembic_paths.py` | Filesystem + Alembic graph helpers shared by `env.py`, the validator, and the service: `discover_version_locations`, `resolve_module_branch_head`, `module_branch_is_isolated`. |
 | `yaml_loader.py` | Declarative seed data loader for `manifest.data_files`. |
-| `frontend_layers.py` | Discovers `manifest.frontend.layer_path` and writes `frontend/modules.json` so Nuxt picks up community layers. |
+| `frontend_layers.py` | Discovers `manifest.frontend.layer_path` and writes the build-time `frontend/modules.json` catalog. Nuxt tags compiled pages by owner; runtime state gates routes, slots, and settings entries. |
 | `router.py` | FastAPI router for the module admin API mounted at `/api/v1/modules/`. |
 
 ## Reading order

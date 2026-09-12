@@ -10,6 +10,7 @@ import { registerSettingsPage } from '~~/app/composables/useSettingsRegistry'
 
 export default defineNuxtPlugin(() => {
   registerSettingsPage({
+    module: 'notifications',
     path: 'language',
     category: 'communications',
     labelKey: 'notifications.communications.language.cardTitle',

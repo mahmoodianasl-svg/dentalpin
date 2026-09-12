@@ -118,6 +118,26 @@ async def active_modules(
     return ApiResponse(data=active)
 
 
+@router.get("/-/active-names")
+async def active_module_names(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ApiResponse[list[str]]:
+    """Installed module names for gating unauthenticated module routes.
+
+    Public module pages cannot use the caller-specific ``/-/active``
+    endpoint. This deliberately narrow response contains no clinic,
+    permission, navigation, or version data.
+    """
+    svc = ModuleService(db)
+    discovered = {module.name for module in svc.discovered()}
+    names = sorted(
+        info.name
+        for info in await svc.list_modules()
+        if info.state == ModuleState.INSTALLED and info.name in discovered
+    )
+    return ApiResponse(data=names)
+
+
 def _nav_visible(item: dict[str, Any], role: str) -> bool:
     perm = item.get("permission")
     if not perm:
