@@ -1,4 +1,5 @@
 import { moduleRouteAccess } from '~/utils/moduleActivation'
+import type { ActiveModule, ApiResponse } from '~/types'
 
 export default defineNuxtRouteMiddleware(async (to) => {
   if (typeof to.meta.dentalpinModule !== 'string') return
@@ -6,9 +7,24 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const auth = useAuth()
   let activeModules: Array<{ name: string }> | null = null
   if (auth.accessToken.value) {
-    const modules = useModules()
-    await modules.ensureLoaded()
-    activeModules = modules.active.value
+    const active = useState<ActiveModule[] | null>('modules:active', () => null)
+    const error = useState<string | null>('modules:active:error', () => null)
+    const lastLoadedAt = useState<number>('modules:active:at', () => 0)
+    const config = useRuntimeConfig()
+    const baseURL = import.meta.server ? config.apiBaseUrlServer : config.public.apiBaseUrl
+    try {
+      const response = await $fetch<ApiResponse<ActiveModule[]>>('/api/v1/modules/-/active', {
+        baseURL,
+        headers: { Authorization: `Bearer ${auth.accessToken.value}` }
+      })
+      active.value = response.data
+      error.value = null
+      lastLoadedAt.value = Date.now()
+    } catch (err) {
+      active.value = null
+      error.value = err instanceof Error ? err.message : 'Failed to load modules'
+    }
+    activeModules = active.value
   } else {
     const config = useRuntimeConfig()
     const baseURL = import.meta.server ? config.apiBaseUrlServer : config.public.apiBaseUrl
