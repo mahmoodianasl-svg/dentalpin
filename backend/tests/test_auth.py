@@ -53,7 +53,8 @@ async def test_setup_requires_operator_token(
     """A network client cannot claim an uninitialized deployment without its secret."""
     response = await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD, headers=headers)
     assert response.status_code == 403
-    assert response.json()["detail"] == "Invalid setup token"
+    assert response.json()["message"] == "Invalid setup token"
+    assert response.json()["errors"] == ["Invalid setup token"]
 
 
 @pytest.mark.asyncio
@@ -69,7 +70,7 @@ async def test_setup_fails_closed_when_token_is_not_configured(
         headers=_SETUP_HEADERS,
     )
     assert response.status_code == 503
-    assert "SETUP_TOKEN" in response.json()["detail"]
+    assert "SETUP_TOKEN" in response.json()["message"]
 
 
 @pytest.mark.asyncio
