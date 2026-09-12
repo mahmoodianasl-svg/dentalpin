@@ -47,10 +47,12 @@ handing off to Playwright.
 ## Login strategy
 
 `tests/e2e/_fixtures.ts` logs in by POSTing directly to
-`/api/v1/auth/login` and setting the `access_token` cookie. The UI
-form works fine in a real browser, but Chromium's cross-origin
-fetch from Playwright sometimes flakes on the preflight. Skipping
-the form saves a few seconds per test and sidesteps that.
+`/api/v1/auth/login` through Playwright's shared browser context. This stores
+the backend-issued HttpOnly refresh cookie without exposing it to test code;
+the first navigation recovers a memory-only access token through the normal
+auth middleware. The UI form works fine in a real browser, but Chromium's
+cross-origin fetch from Playwright sometimes flakes on the preflight.
+Skipping the form saves a few seconds per test and sidesteps that.
 
 All five seeded roles share `demo1234` as the password.
 

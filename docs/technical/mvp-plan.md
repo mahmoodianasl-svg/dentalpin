@@ -178,11 +178,17 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 **Auth Router (app/core/auth/router.py):**
 ```
-POST /api/v1/auth/register  → Create user, return tokens
-POST /api/v1/auth/login     → Verify credentials, return tokens
-POST /api/v1/auth/refresh   → Exchange refresh token for new access token
+POST /api/v1/auth/setup     → Create initial admin; set protected session cookie
+POST /api/v1/auth/login     → Verify credentials; return short-lived access token
+POST /api/v1/auth/refresh   → Validate HttpOnly session + CSRF; return access token
+POST /api/v1/auth/logout    → Validate CSRF and expire browser session cookies
 GET  /api/v1/auth/me        → Return current user info
 ```
+
+The browser keeps the short-lived access JWT in Nuxt memory and sends it in
+the `Authorization` header. The seven-day refresh JWT is never returned in
+JSON: the backend owns it in a `Secure`, `HttpOnly`, `SameSite=Strict` cookie.
+Refresh and logout also require a matching double-submit CSRF cookie/header.
 
 **Auth Service (app/core/auth/service.py):**
 - `hash_password(password)` → bcrypt hash
@@ -258,15 +264,15 @@ services:
     environment:
       POSTGRES_DB: dental_clinic
       POSTGRES_USER: dental
-      POSTGRES_PASSWORD: dental_dev
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     ports: ["5432:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
 
   backend:
     build: ./backend
     environment:
-      DATABASE_URL: postgresql+asyncpg://dental:dental_dev@db:5432/dental_clinic
-      SECRET_KEY: dev-secret-key-change-in-production
+      DATABASE_URL: postgresql+asyncpg://dental:${POSTGRES_PASSWORD}@db:5432/dental_clinic
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY}
       ENVIRONMENT: development
     ports: ["8000:8000"]
     depends_on: [db]
@@ -394,16 +400,16 @@ export function getModules(): ModuleDefinition[] {
 
 ```typescript
 export function useAuth() {
-  const user = useState<User | null>('user', () => null)
-  const accessToken = useCookie('access_token')
-  const refreshToken = useCookie('refresh_token')
+  const user = useState<User | null>('auth:user', () => null)
+  const accessToken = useState<string | null>('auth:access-token', () => null)
+  const csrfToken = useCookie('dentalpin_csrf')
 
   async function login(email: string, password: string) { ... }
   async function logout() { ... }
   async function refresh() { ... }
-  function isAuthenticated() { return !!accessToken.value }
+  const isAuthenticated = computed(() => !!accessToken.value && !!user.value)
 
-  return { user, login, logout, refresh, isAuthenticated }
+  return { user, accessToken, login, logout, refresh, isAuthenticated }
 }
 ```
 
@@ -461,15 +467,15 @@ export function useApi() {
 
 ```
 +------------------------------------------+
-| ← Pacientes   |   García, Juan           |
+| ← Pacientes   |   Example Patient       |
 +------------------------------------------+
 | [Info] [Historial] [Citas]               |
 +------------------------------------------+
 | Tab: Info                                |
-|   Nombre: Juan García                    |
-|   Teléfono: 612 345 678                  |
-|   Email: juan@example.com                |
-|   Fecha nacimiento: 15/03/1985           |
+|   Nombre: Example Patient                |
+|   Teléfono: —                            |
+|   Email: patient@example.invalid         |
+|   Fecha nacimiento: —                    |
 |   Notas: ...                             |
 |                           [Editar]       |
 +------------------------------------------+
@@ -728,8 +734,8 @@ async def seed_demo_data(db: AsyncSession):
 
     # 2. Create admin user
     admin = User(
-        email="admin@demo.clinic",
-        password_hash=hash_password("demo1234"),
+        email=os.environ["DEMO_ADMIN_EMAIL"],
+        password_hash=hash_password(os.environ["DEMO_ADMIN_PASSWORD"]),
         first_name="Admin",
         last_name="Demo"
     )
@@ -737,14 +743,8 @@ async def seed_demo_data(db: AsyncSession):
     # 3. Create clinic membership
     ClinicMembership(user=admin, clinic=clinic, role="admin")
 
-    # 4. Create 5 patients
-    patients = [
-        Patient(clinic=clinic, first_name="Juan", last_name="García", phone="612345678"),
-        Patient(clinic=clinic, first_name="María", last_name="López", phone="655123456"),
-        Patient(clinic=clinic, first_name="Carlos", last_name="Pérez", phone="678901234"),
-        Patient(clinic=clinic, first_name="Ana", last_name="Martínez", phone="611222333"),
-        Patient(clinic=clinic, first_name="Pedro", last_name="Sánchez", phone="699888777"),
-    ]
+    # 4. Create synthetic patients without embedding personal data in source
+    patients = create_demo_patients(clinic=clinic, count=5)
 
     # 5. Create 10 appointments spread across current week
     # ...
@@ -827,7 +827,7 @@ jobs:
         env:
           POSTGRES_DB: test_db
           POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
+          POSTGRES_PASSWORD: ${TEST_DB_PASSWORD}
         ports: ["5432:5432"]
     steps:
       - uses: actions/checkout@v4
@@ -837,8 +837,8 @@ jobs:
       - run: ruff check backend/
       - run: pytest backend/tests/ -v
         env:
-          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test_db
-          SECRET_KEY: test-secret
+          DATABASE_URL: ${TEST_DATABASE_URL}
+          SECRET_KEY: ${TEST_SECRET_KEY}
 
   frontend:
     runs-on: ubuntu-latest
@@ -872,7 +872,7 @@ Open source dental clinic management software.
 docker-compose up
 
 Open http://localhost:3000
-Login: admin@demo.clinic / demo1234
+Login: values configured through `DEMO_ADMIN_EMAIL` / `DEMO_ADMIN_PASSWORD`
 
 ## Tech Stack
 - Backend: FastAPI + PostgreSQL

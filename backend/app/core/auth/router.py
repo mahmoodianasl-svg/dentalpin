@@ -4,7 +4,7 @@ import secrets
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError
 from slowapi import Limiter
@@ -36,7 +36,6 @@ from .schemas import (
     ProfessionalResponse,
     SetupStatusResponse,
     SystemSetup,
-    TokenRefresh,
     TokenResponse,
     UserCreate,
     UserResponse,
@@ -63,6 +62,69 @@ limiter = Limiter(key_func=get_remote_address, enabled=_limiter_enabled)
 # transaction-scoped PostgreSQL lock is released by the setup commit (or by a
 # rollback), so a competing request re-checks initialized state after waiting.
 _SETUP_ADVISORY_LOCK_ID = int.from_bytes(b"DPNSETUP", "big")
+_REFRESH_COOKIE_NAME = "dentalpin_refresh"
+_CSRF_COOKIE_NAME = "dentalpin_csrf"
+_CSRF_HEADER_NAME = "X-DentalPin-CSRF-Token"
+
+
+def _cookie_secure() -> bool:
+    return settings.ENVIRONMENT.lower() == "production"
+
+
+def _set_session_cookies(
+    response: Response,
+    refresh_token: str,
+    *,
+    csrf_token: str | None = None,
+) -> str:
+    """Write the protected refresh credential and readable CSRF nonce."""
+    max_age = settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+    csrf_token = csrf_token or secrets.token_urlsafe(32)
+    common = {
+        "max_age": max_age,
+        "secure": _cookie_secure(),
+        "samesite": "strict",
+        "path": "/",
+    }
+    response.set_cookie(
+        key=_REFRESH_COOKIE_NAME,
+        value=refresh_token,
+        httponly=True,
+        **common,
+    )
+    response.set_cookie(
+        key=_CSRF_COOKIE_NAME,
+        value=csrf_token,
+        httponly=False,
+        **common,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return csrf_token
+
+
+def _clear_session_cookies(response: Response) -> None:
+    """Expire both browser session cookies."""
+    response.delete_cookie(_REFRESH_COOKIE_NAME, path="/")
+    response.delete_cookie(_CSRF_COOKIE_NAME, path="/")
+    response.headers["Cache-Control"] = "no-store"
+
+
+def _verify_csrf(request: Request, presented_token: str | None) -> str:
+    """Validate the double-submit nonce for cookie-authenticated requests."""
+    cookie_token = request.cookies.get(_CSRF_COOKIE_NAME)
+    if (
+        cookie_token is None
+        or presented_token is None
+        or not secrets.compare_digest(
+            cookie_token.encode("utf-8"),
+            presented_token.encode("utf-8"),
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid CSRF token",
+        )
+    return cookie_token
 
 
 def _verify_setup_token(presented_token: str | None) -> None:
@@ -93,8 +155,7 @@ async def _refresh_rate_key(request: Request) -> str:
     IP if the body is missing or unreadable.
     """
     try:
-        body = await request.json()
-        token = body.get("refresh_token") if isinstance(body, dict) else None
+        token = request.cookies.get(_REFRESH_COOKIE_NAME)
         if token:
             payload = decode_token(token)
             sub = payload.get("sub")
@@ -118,6 +179,7 @@ async def setup_status(
 @limiter.limit("5/hour")
 async def setup(
     request: Request,
+    response: Response,
     data: SystemSetup,
     db: Annotated[AsyncSession, Depends(get_db)],
     setup_token: Annotated[str | None, Header(alias="X-DentalPin-Setup-Token")] = None,
@@ -172,13 +234,15 @@ async def setup(
     )
     refresh_token = create_refresh_token(user.id, token_version=user.token_version)
 
-    return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+    _set_session_cookies(response, refresh_token)
+    return TokenResponse(access_token=access_token)
 
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
 async def login(
     request: Request,
+    response: Response,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TokenResponse:
@@ -215,22 +279,28 @@ async def login(
     )
     refresh_token = create_refresh_token(user.id, token_version=user.token_version)
 
-    return TokenResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
-    )
+    _set_session_cookies(response, refresh_token)
+    return TokenResponse(access_token=access_token)
 
 
 @router.post("/refresh", response_model=AuthResponse)
 @limiter.limit("10/minute", key_func=_refresh_rate_key)
 async def refresh_token(
     request: Request,
-    data: TokenRefresh,
+    response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
+    csrf_token: Annotated[str | None, Header(alias=_CSRF_HEADER_NAME)] = None,
 ) -> AuthResponse:
-    """Refresh access token using refresh token."""
+    """Refresh browser auth state from the protected session cookie."""
+    refresh_cookie = request.cookies.get(_REFRESH_COOKIE_NAME)
+    if refresh_cookie is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing refresh session",
+        )
+    verified_csrf = _verify_csrf(request, csrf_token)
     try:
-        payload = decode_token(data.refresh_token)
+        payload = decode_token(refresh_cookie)
         user_id = payload.get("sub")
         token_type = payload.get("type")
         token_version = payload.get("token_version", 0)
@@ -241,7 +311,7 @@ async def refresh_token(
                 detail="Invalid refresh token",
             )
 
-    except JWTError:
+    except (JWTError, TypeError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
@@ -295,13 +365,27 @@ async def refresh_token(
         token_version=user.token_version,
     )
     new_refresh_token = create_refresh_token(user.id, token_version=user.token_version)
+    _set_session_cookies(response, new_refresh_token, csrf_token=verified_csrf)
 
     return AuthResponse(
         access_token=access_token,
-        refresh_token=new_refresh_token,
         user=UserResponse.model_validate(user),
         clinics=clinics,
     )
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    request: Request,
+    response: Response,
+    csrf_token: Annotated[str | None, Header(alias=_CSRF_HEADER_NAME)] = None,
+) -> Response:
+    """Clear the browser session after validating its CSRF nonce."""
+    if request.cookies.get(_REFRESH_COOKIE_NAME) is not None:
+        _verify_csrf(request, csrf_token)
+    _clear_session_cookies(response)
+    response.status_code = status.HTTP_204_NO_CONTENT
+    return response
 
 
 @router.get("/me", response_model=ApiResponse[MeResponse])

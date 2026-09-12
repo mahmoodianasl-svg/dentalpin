@@ -1,4 +1,4 @@
-import { test, expect, type Page } from './_fixtures'
+import { test, expect, accessTokenFor, type Page } from './_fixtures'
 
 /**
  * Periodontogram smoke: end-to-end flow against the live stack.
@@ -22,10 +22,9 @@ const API_BASE = process.env.E2E_API_BASE || 'http://localhost:8000'
 
 async function getPatientId(page: Page): Promise<string> {
   const ctx = page.context()
-  const cookies = await ctx.cookies()
-  const token = cookies.find(c => c.name === 'access_token')?.value
+  const token = accessTokenFor(page)
   const res = await ctx.request.get(`${API_BASE}/api/v1/patients?page=1&page_size=1`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {}
+    headers: { Authorization: `Bearer ${token}` }
   })
   if (!res.ok()) throw new Error(`patient list failed: ${res.status()}`)
   const body = (await res.json()) as { data: Array<{ id: string }> }
@@ -38,17 +37,16 @@ async function discardDraftIfAny(page: Page, patientId: string): Promise<void> {
   // Clean up any draft left behind by a previous run so tests are
   // independent. Idempotent — silently ignores 404 / no-draft.
   const ctx = page.context()
-  const cookies = await ctx.cookies()
-  const token = cookies.find(c => c.name === 'access_token')?.value
+  const token = accessTokenFor(page)
   const draftRes = await ctx.request.get(
     `${API_BASE}/api/v1/periodontogram/patients/${patientId}/draft`,
-    { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+    { headers: { Authorization: `Bearer ${token}` } }
   )
   if (!draftRes.ok()) return
   const body = (await draftRes.json()) as { data: { id: string } | null }
   if (!body.data) return
   await ctx.request.delete(`${API_BASE}/api/v1/periodontogram/snapshots/${body.data.id}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {}
+    headers: { Authorization: `Bearer ${token}` }
   })
 }
 
@@ -57,11 +55,10 @@ async function ensureDraftExists(page: Page, patientId: string): Promise<void> {
   // is idempotent (returns existing draft or creates one). Avoids
   // depending on test ordering / leftover state.
   const ctx = page.context()
-  const cookies = await ctx.cookies()
-  const token = cookies.find(c => c.name === 'access_token')?.value
+  const token = accessTokenFor(page)
   await ctx.request.post(
     `${API_BASE}/api/v1/periodontogram/patients/${patientId}/draft`,
-    { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+    { headers: { Authorization: `Bearer ${token}` } }
   )
 }
 

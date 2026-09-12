@@ -52,8 +52,8 @@ sequenceDiagram
     DB-->>BE: User record
     BE->>BE: Verify password hash
     BE->>BE: Generate JWT (access + refresh)
-    BE-->>API: {access_token, refresh_token}
-    API->>API: Store tokens
+    BE-->>API: {access_token} + HttpOnly refresh cookie
+    API->>API: Keep access token in memory
     API-->>UI: Success
 
     Note over UI,API: Subsequent requests include<br/>Authorization: Bearer {token}
@@ -65,14 +65,15 @@ sequenceDiagram
 sequenceDiagram
     participant API as useApi()
     participant BE as /auth/refresh
-    participant Store as Token Store
+    participant Jar as Browser cookie jar
 
     API->>BE: Request fails (401)
-    API->>Store: Get refresh_token
-    API->>BE: POST /auth/refresh
-    BE->>BE: Validate refresh token
-    BE-->>API: New access_token
-    API->>Store: Update access_token
+    API->>Jar: Read non-secret CSRF nonce
+    API->>BE: POST /auth/refresh + CSRF header
+    Jar-->>BE: HttpOnly refresh cookie
+    BE->>BE: Validate refresh JWT and CSRF nonce
+    BE-->>API: New access_token + rotated cookie
+    API->>API: Update in-memory access_token
     API->>BE: Retry original request
     BE-->>API: Success
 ```
