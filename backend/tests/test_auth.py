@@ -5,8 +5,10 @@ import asyncio
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import Response
 
 from app.config import settings
+from app.core.auth.router import _set_session_cookies
 from app.main import app
 from app.version import VERSION
 
@@ -105,8 +107,10 @@ async def test_setup_creates_admin_and_clinic(client: AsyncClient) -> None:
     assert response.status_code == 201
     data = response.json()
     assert "access_token" in data
-    assert "refresh_token" in data
+    assert "refresh_token" not in data
     assert data["token_type"] == "bearer"
+    assert client.cookies.get("dentalpin_refresh")
+    assert client.cookies.get("dentalpin_csrf")
 
     me = await client.get(
         "/api/v1/auth/me",
@@ -156,6 +160,78 @@ async def test_login(client: AsyncClient) -> None:
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
+    assert "refresh_token" not in data
+    assert client.cookies.get("dentalpin_refresh")
+    assert client.cookies.get("dentalpin_csrf")
+
+
+@pytest.mark.asyncio
+async def test_refresh_uses_httponly_cookie_and_csrf_header(client: AsyncClient) -> None:
+    """Refresh credentials never enter JSON and require the double-submit nonce."""
+    await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD, headers=_SETUP_HEADERS)
+    csrf_token = client.cookies.get("dentalpin_csrf")
+    assert csrf_token
+
+    missing_csrf = await client.post("/api/v1/auth/refresh")
+    assert missing_csrf.status_code == 403
+
+    wrong_csrf = await client.post(
+        "/api/v1/auth/refresh",
+        headers={"X-DentalPin-CSRF-Token": "wrong-token"},
+    )
+    assert wrong_csrf.status_code == 403
+
+    refreshed = await client.post(
+        "/api/v1/auth/refresh",
+        headers={"X-DentalPin-CSRF-Token": csrf_token},
+    )
+    assert refreshed.status_code == 200
+    assert "access_token" in refreshed.json()
+    assert "refresh_token" not in refreshed.json()
+    assert refreshed.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
+async def test_refresh_rejects_missing_session_cookie(client: AsyncClient) -> None:
+    """A CSRF nonce alone is not a refresh credential."""
+    response = await client.post(
+        "/api/v1/auth/refresh",
+        headers={"X-DentalPin-CSRF-Token": "orphan-nonce"},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout_clears_session_cookies(client: AsyncClient) -> None:
+    """Logout expires both browser session cookies after CSRF validation."""
+    await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD, headers=_SETUP_HEADERS)
+    csrf_token = client.cookies.get("dentalpin_csrf")
+    assert csrf_token
+
+    response = await client.post(
+        "/api/v1/auth/logout",
+        headers={"X-DentalPin-CSRF-Token": csrf_token},
+    )
+    assert response.status_code == 204
+    assert client.cookies.get("dentalpin_refresh") is None
+    assert client.cookies.get("dentalpin_csrf") is None
+
+
+def test_production_session_cookie_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The long-lived credential is Secure, HttpOnly, and SameSite=Strict."""
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    response = Response()
+    _set_session_cookies(response, "refresh-secret", csrf_token="csrf-nonce")
+    cookies = response.headers.getlist("set-cookie")
+    refresh_cookie = next(item for item in cookies if item.startswith("dentalpin_refresh="))
+    csrf_cookie = next(item for item in cookies if item.startswith("dentalpin_csrf="))
+
+    assert "HttpOnly" in refresh_cookie
+    assert "Secure" in refresh_cookie
+    assert "SameSite=strict" in refresh_cookie
+    assert "HttpOnly" not in csrf_cookie
+    assert "Secure" in csrf_cookie
+    assert "SameSite=strict" in csrf_cookie
 
 
 @pytest.mark.asyncio

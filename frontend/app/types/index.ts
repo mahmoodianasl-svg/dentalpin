@@ -84,13 +84,12 @@ export interface LoginCredentials {
   password: string
 }
 
-export interface AuthTokens {
+export interface AccessTokenResponse {
   access_token: string
-  refresh_token: string
   token_type: string
 }
 
-export interface AuthResponse extends AuthTokens {
+export interface AuthResponse extends AccessTokenResponse {
   user: User
   clinics: Array<{ id: string, name: string, role: string }>
 }

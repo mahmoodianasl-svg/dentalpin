@@ -29,17 +29,10 @@ class UserLogin(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    """Schema for token response."""
+    """Browser-safe token response; refresh credentials stay in HttpOnly cookies."""
 
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
-
-
-class TokenRefresh(BaseModel):
-    """Schema for token refresh request."""
-
-    refresh_token: str
 
 
 class UserResponse(BaseModel):
@@ -138,10 +131,9 @@ class MeResponse(BaseModel):
 
 
 class AuthResponse(BaseModel):
-    """Schema for auth response with user info (login/refresh)."""
+    """Schema for refreshed browser auth state."""
 
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
     user: UserResponse
     clinics: list[ClinicResponse]

@@ -1,4 +1,4 @@
-import { test, expect } from './_fixtures'
+import { test, expect, accessTokenFor } from './_fixtures'
 
 /**
  * Quick patient creation from the agenda's "Nueva cita" modal.
@@ -88,11 +88,10 @@ test.describe('agenda — quick patient create', () => {
     // actually created (not just optimistic UI). Going through /patients
     // listing would require an additional render race.
     const ctx = loggedIn.context()
-    const cookies = await ctx.cookies()
-    const token = cookies.find(c => c.name === 'access_token')?.value
+    const token = accessTokenFor(loggedIn)
     const res = await ctx.request.get(
       `${API_BASE}/api/v1/patients?search=${encodeURIComponent(lastName)}`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+      { headers: { Authorization: `Bearer ${token}` } }
     )
     expect(res.ok()).toBeTruthy()
     const body = (await res.json()) as { data: Array<{ first_name: string, last_name: string }> }
@@ -115,12 +114,7 @@ test.describe('agenda — quick patient create', () => {
       headers: { 'content-type': 'application/x-www-form-urlencoded' }
     })
     if (!loginRes.ok()) test.skip(true, 'hygienist seed user not available')
-    const tokens = (await loginRes.json()) as { access_token: string }
-    await ctx.addCookies([{
-      name: 'access_token',
-      value: tokens.access_token,
-      url: 'http://localhost:3000'
-    }])
+    await loginRes.json()
 
     await page.goto('/appointments')
     await page.waitForLoadState('networkidle')

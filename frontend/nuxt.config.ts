@@ -81,6 +81,16 @@ export default defineNuxtConfig({
   },
   srcDir: 'app',
 
+  // Same-origin BFF path used by deployments that expose frontend and backend
+  // on separate service hosts (for example Coolify). Caddy production routes
+  // /api directly to the backend; this fallback keeps the browser-facing
+  // origin unified so HttpOnly session cookies also reach Nuxt SSR.
+  routeRules: {
+    '/api/**': {
+      proxy: `${process.env.API_BASE_URL_SERVER || 'http://backend:8000'}/api/**`
+    }
+  },
+
   // Restart dev server when the backend rewrites `modules.json` on
   // module install/uninstall. `extends` is evaluated once at config
   // boot, so a layer added after Nuxt started is invisible until

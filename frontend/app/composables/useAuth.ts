@@ -1,4 +1,11 @@
-import type { User, LoginCredentials, AuthResponse, MeResponse, ApiResponse } from '~/types'
+import type {
+  User,
+  LoginCredentials,
+  AccessTokenResponse,
+  AuthResponse,
+  MeResponse,
+  ApiResponse
+} from '~/types'
 
 // Client-only module-level dedupe slot for the in-flight refresh promise.
 // Storing a Promise inside useState() leaks it into the SSR payload, which
@@ -20,19 +27,13 @@ export function useAuth() {
   // State
   const user = useState<User | null>('auth:user', () => null)
   const permissions = useState<string[]>('auth:permissions', () => [])
-  // Cookie lifetime matches refresh token; JWT expiry is enforced by the
-  // backend, and a 401 triggers refresh in useApi. Matching the access
-  // cookie's maxAge to the 15min JWT TTL caused premature logouts.
-  const accessToken = useCookie('access_token', {
-    maxAge: 60 * 60 * 24 * 7, // 7 days
-    secure: import.meta.env.PROD,
-    sameSite: 'lax'
-  })
-  const refreshToken = useCookie('refresh_token', {
-    maxAge: 60 * 60 * 24 * 7, // 7 days
-    secure: import.meta.env.PROD,
-    sameSite: 'lax'
-  })
+  // The short-lived access JWT is memory-only. It may be serialized in the
+  // Nuxt payload during SSR, but it is never persisted in a JS-readable
+  // cookie. The long-lived refresh JWT is backend-owned and HttpOnly; only
+  // its non-secret double-submit CSRF nonce is readable here.
+  const accessToken = useState<string | null>('auth:access-token', () => null)
+  const csrfToken = useCookie<string | null>('dentalpin_csrf')
+  const requestCookie = import.meta.server ? useRequestHeaders(['cookie']).cookie : undefined
 
   // Computed
   const isAuthenticated = computed(() => !!accessToken.value && !!user.value)
@@ -44,33 +45,61 @@ export function useAuth() {
     formData.append('username', credentials.email)
     formData.append('password', credentials.password)
 
-    const response = await $fetch<AuthResponse>('/api/v1/auth/login', {
+    const response = await $fetch<AccessTokenResponse>('/api/v1/auth/login', {
       baseURL: apiBaseUrl.value,
       method: 'POST',
       body: formData,
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
       }
     })
 
     accessToken.value = response.access_token
-    refreshToken.value = response.refresh_token
+    if (import.meta.client) refreshCookie('dentalpin_csrf')
 
     // Fetch user info after login
     await fetchUser()
   }
 
   async function logout(): Promise<void> {
-    accessToken.value = null
-    refreshToken.value = null
-    user.value = null
-    permissions.value = []
+    try {
+      if (csrfToken.value) {
+        await $fetch('/api/v1/auth/logout', {
+          baseURL: apiBaseUrl.value,
+          method: 'POST',
+          credentials: 'include',
+          headers: sessionHeaders()
+        })
+      }
+    } catch {
+      // Local state must still close if the backend is unavailable.
+    }
+    clearAuthState()
+    if (import.meta.client) refreshCookie('dentalpin_csrf')
     // SSR: skip router.push — calling it from middleware can crash the
     // response. The global auth middleware redirects to /login once it
     // sees isAuthenticated === false.
     if (import.meta.client) {
       await router.push('/login')
     }
+  }
+
+  function clearAuthState(): void {
+    accessToken.value = null
+    user.value = null
+    permissions.value = []
+  }
+
+  function sessionHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {}
+    if (csrfToken.value) {
+      headers['X-DentalPin-CSRF-Token'] = csrfToken.value
+    }
+    if (requestCookie) {
+      headers.Cookie = requestCookie
+    }
+    return headers
   }
 
   // Dedupe concurrent refreshes. Without this, a page that fires N
@@ -81,7 +110,7 @@ export function useAuth() {
   // module-level slot (see top of file) — putting a Promise into
   // useState() breaks SSR payload serialization.
   async function refresh(): Promise<boolean> {
-    if (!refreshToken.value) {
+    if (!csrfToken.value) {
       return false
     }
 
@@ -94,11 +123,11 @@ export function useAuth() {
         const response = await $fetch<AuthResponse>('/api/v1/auth/refresh', {
           baseURL: apiBaseUrl.value,
           method: 'POST',
-          body: { refresh_token: refreshToken.value }
+          credentials: 'include',
+          headers: sessionHeaders()
         })
 
         accessToken.value = response.access_token
-        refreshToken.value = response.refresh_token
         user.value = response.user
 
         // /auth/refresh returns user but not the expanded permissions list,
@@ -113,7 +142,7 @@ export function useAuth() {
         permissions.value = me.data.permissions
         return true
       } catch {
-        await logout()
+        clearAuthState()
         return false
       }
     })()
@@ -160,7 +189,8 @@ export function useAuth() {
     }
   }
 
-  // Initialize user if token exists (works on both server and client).
+  // Initialize user if an access token exists, otherwise attempt silent
+  // recovery from the backend-owned HttpOnly refresh session.
   // Must never throw: the global auth middleware awaits this on SSR, and
   // an unhandled rejection there crashes the response so the user sees
   // neither the page nor a redirect to /login. On any failure, clear
@@ -169,15 +199,11 @@ export function useAuth() {
     try {
       if (accessToken.value && !user.value) {
         await fetchUser()
-      } else if (!accessToken.value && refreshToken.value) {
-        // Access cookie gone but refresh still valid — recover session.
+      } else if (!accessToken.value) {
         await refresh()
       }
     } catch {
-      accessToken.value = null
-      refreshToken.value = null
-      user.value = null
-      permissions.value = []
+      clearAuthState()
     }
   }
 

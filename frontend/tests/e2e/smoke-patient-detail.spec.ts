@@ -1,4 +1,4 @@
-import { test, expect } from './_fixtures'
+import { test, expect, accessTokenFor } from './_fixtures'
 
 /**
  * Patient detail smoke: opens a seeded patient and asserts each slot
@@ -25,10 +25,9 @@ test.describe('patient detail', () => {
     // and bounce back to /patients. Going straight to the detail URL is
     // what we actually want to cover here.
     const ctx = loggedIn.context()
-    const cookies = await ctx.cookies()
-    const token = cookies.find(c => c.name === 'access_token')?.value
+    const token = accessTokenFor(loggedIn)
     const res = await ctx.request.get(`${API_BASE}/api/v1/patients?page=1&page_size=1`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
+      headers: { Authorization: `Bearer ${token}` }
     })
     if (!res.ok()) {
       throw new Error(`failed to list patients: ${res.status()} ${await res.text()}`)

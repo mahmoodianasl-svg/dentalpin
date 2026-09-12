@@ -30,6 +30,20 @@ stored in the clinic database. After the first administrator is created, the
 endpoint self-closes. You may rotate `SETUP_TOKEN` and restart the backend
 without invalidating staff sessions.
 
+### Browser session boundary
+
+DentalPin keeps the long-lived refresh credential in a host-only `Secure`,
+`HttpOnly`, `SameSite=Strict` cookie. The browser-visible access token is
+short-lived and held only in application memory. Refresh and logout requests
+must also present the non-secret `dentalpin_csrf` cookie value in the
+`X-DentalPin-CSRF-Token` header. Deploy the UI and `/api` under one public
+origin; the included Caddy and Coolify configurations provide this routing.
+
+If a reverse proxy is customized, preserve `Set-Cookie` headers and HTTPS,
+and route the browser's `/api/*` requests to the backend. Do not publish the
+backend on a second browser-facing origin and do not copy authentication
+cookies into JavaScript-accessible storage.
+
 Smoke-check:
 
 ```bash
