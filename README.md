@@ -98,7 +98,7 @@ curl -O https://raw.githubusercontent.com/martinezsalmeron/dentalpin/main/docker
 curl -O https://raw.githubusercontent.com/martinezsalmeron/dentalpin/main/Caddyfile
 curl -o .env https://raw.githubusercontent.com/martinezsalmeron/dentalpin/main/.env.prod.example
 
-# Set PUBLIC_URL, POSTGRES_PASSWORD and SECRET_KEY in .env, then:
+# Set PUBLIC_URL, POSTGRES_PASSWORD, SECRET_KEY and SETUP_TOKEN in .env, then:
 docker compose -f docker-compose.prod.yml up -d
 ```
 
@@ -106,6 +106,10 @@ Point a domain at the server, set `PUBLIC_URL=https://your-domain`, and TLS is
 provisioned on first boot — Caddy fronts both services on a single origin, so
 there is no CORS and no certificate to renew. Set `SEED_ON_STARTUP=1` to load
 the demo clinic and look around before going live.
+
+For a real clinic, open `/setup` after the stack starts and enter the same
+one-time `SETUP_TOKEN` value from `.env`. The backend rejects first-admin
+creation without this operator secret and serializes competing setup claims.
 
 Images: [`dentalpin-backend`](https://github.com/martinezsalmeron/dentalpin/pkgs/container/dentalpin-backend) ·
 [`dentalpin-frontend`](https://github.com/martinezsalmeron/dentalpin/pkgs/container/dentalpin-frontend)

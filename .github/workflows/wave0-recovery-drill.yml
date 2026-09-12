@@ -24,6 +24,7 @@ jobs:
       POSTGRES_PASSWORD: recovery-ci-password
       DATABASE_URL: postgresql+asyncpg://dental:recovery-ci-password@localhost:5432/dental_recovery_source
       SECRET_KEY: recovery-ci-secret-key
+      SETUP_TOKEN: recovery-setup-token-at-least-32-characters
       ENVIRONMENT: test
       TESTING: "true"
     steps:

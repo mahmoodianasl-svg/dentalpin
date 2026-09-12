@@ -15,6 +15,7 @@ const isLoading = ref(false)
 const errorMessage = ref('')
 
 const form = reactive({
+  setupToken: '',
   firstName: '',
   lastName: '',
   email: '',
@@ -27,6 +28,7 @@ const form = reactive({
 const errors = reactive<Record<string, string>>({})
 
 function validateAccount(): boolean {
+  errors.setupToken = form.setupToken.trim() ? '' : t('setup.tokenRequired')
   errors.firstName = form.firstName.trim() ? '' : t('setup.firstNameRequired')
   errors.lastName = form.lastName.trim() ? '' : t('setup.lastNameRequired')
 
@@ -44,7 +46,7 @@ function validateAccount(): boolean {
 
   errors.passwordConfirm = form.password === form.passwordConfirm ? '' : t('setup.passwordMismatch')
 
-  return !errors.firstName && !errors.lastName && !errors.email
+  return !errors.setupToken && !errors.firstName && !errors.lastName && !errors.email
     && !errors.password && !errors.passwordConfirm
 }
 
@@ -77,7 +79,10 @@ async function onSubmit() {
       admin_password: form.password,
       clinic_name: form.clinicName.trim(),
       clinic_tax_id: form.taxId.trim()
-    }, { skipAuth: true })
+    }, {
+      skipAuth: true,
+      headers: { 'X-DentalPin-Setup-Token': form.setupToken.trim() }
+    })
 
     // ponytail: re-login con las credenciales recién creadas en vez de
     // inyectar los tokens a mano — una request barata y reusa fetchUser.
@@ -87,7 +92,10 @@ async function onSubmit() {
     await navigateTo('/')
   } catch (error: unknown) {
     const status = (error as { statusCode?: number }).statusCode
-    if (status === 409) {
+    if (status === 403) {
+      errorMessage.value = t('setup.tokenInvalid')
+      step.value = 1
+    } else if (status === 409) {
       errorMessage.value = t('setup.alreadyInitialized')
     } else if (status === 422) {
       errorMessage.value = t('setup.passwordWeak')
@@ -150,6 +158,22 @@ async function onSubmit() {
         class="space-y-4"
         @submit.prevent="goNext"
       >
+        <UFormField
+          :label="t('setup.token')"
+          name="setupToken"
+          :error="errors.setupToken || undefined"
+          :help="t('setup.tokenHint')"
+        >
+          <UInput
+            v-model="form.setupToken"
+            type="password"
+            class="w-full"
+            icon="i-lucide-key-round"
+            autocomplete="off"
+            :disabled="isLoading"
+          />
+        </UFormField>
+
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <UFormField
             :label="t('setup.firstName')"

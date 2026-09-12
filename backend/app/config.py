@@ -11,6 +11,10 @@ class Settings(BaseSettings):
 
     # Security
     SECRET_KEY: str
+    # One-time operator secret required to claim a fresh installation.
+    # Keep this independent from SECRET_KEY so it can be removed/rotated
+    # after setup without invalidating staff sessions.
+    SETUP_TOKEN: str = ""
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     ALGORITHM: str = "HS256"

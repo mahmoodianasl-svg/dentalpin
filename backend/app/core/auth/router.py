@@ -1,14 +1,15 @@
 """Authentication router with rate limiting."""
 
+import secrets
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -58,6 +59,29 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _limiter_enabled = settings.ENVIRONMENT == "production" and not settings.TESTING
 limiter = Limiter(key_func=get_remote_address, enabled=_limiter_enabled)
 
+# Serialize the one-time installation claim across backend replicas.  The
+# transaction-scoped PostgreSQL lock is released by the setup commit (or by a
+# rollback), so a competing request re-checks initialized state after waiting.
+_SETUP_ADVISORY_LOCK_ID = int.from_bytes(b"DPNSETUP", "big")
+
+
+def _verify_setup_token(presented_token: str | None) -> None:
+    """Fail closed unless the operator supplied the configured setup secret."""
+    configured_token = settings.SETUP_TOKEN
+    if len(configured_token) < 32:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="First-run setup is disabled until SETUP_TOKEN is configured",
+        )
+    if presented_token is None or not secrets.compare_digest(
+        presented_token.encode("utf-8"),
+        configured_token.encode("utf-8"),
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid setup token",
+        )
+
 
 async def _refresh_rate_key(request: Request) -> str:
     """Key the refresh limiter by user, not IP.
@@ -96,15 +120,18 @@ async def setup(
     request: Request,
     data: SystemSetup,
     db: Annotated[AsyncSession, Depends(get_db)],
+    setup_token: Annotated[str | None, Header(alias="X-DentalPin-Setup-Token")] = None,
 ) -> TokenResponse:
     """First-run: create the first admin account and its clinic, then log them in.
 
-    Self-closing: once any user exists the system is initialized and this
-    endpoint returns 409.
+    The claim requires an operator-provisioned secret and is serialized across
+    replicas. Once any user exists the endpoint self-closes with 409.
     """
-    # ponytail: guard por count==0; una carrera entre dos setups simultáneos es
-    # despreciable en un arranque de operador único. Subir a constraint/lock solo
-    # si esto se vuelve multi-tenant self-serve.
+    _verify_setup_token(setup_token)
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_id)"),
+        {"lock_id": _SETUP_ADVISORY_LOCK_ID},
+    )
     existing = await db.scalar(select(func.count()).select_from(User))
     if existing:
         raise HTTPException(

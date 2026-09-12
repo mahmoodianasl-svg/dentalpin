@@ -1,8 +1,13 @@
 """Tests for authentication endpoints."""
 
-import pytest
-from httpx import AsyncClient
+import asyncio
 
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.main import app
 from app.version import VERSION
 
 
@@ -22,6 +27,7 @@ _SETUP_PAYLOAD = {
     "clinic_name": "My Clinic",
     "clinic_tax_id": "B12345678",
 }
+_SETUP_HEADERS = {"X-DentalPin-Setup-Token": settings.SETUP_TOKEN}
 
 
 @pytest.mark.asyncio
@@ -31,7 +37,7 @@ async def test_setup_status(client: AsyncClient) -> None:
     assert before.status_code == 200
     assert before.json()["data"]["initialized"] is False
 
-    response = await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD)
+    response = await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD, headers=_SETUP_HEADERS)
     assert response.status_code == 201
 
     after = await client.get("/api/v1/auth/setup/status")
@@ -39,9 +45,63 @@ async def test_setup_status(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("headers", [{}, {"X-DentalPin-Setup-Token": "wrong-token"}])
+async def test_setup_requires_operator_token(
+    client: AsyncClient,
+    headers: dict[str, str],
+) -> None:
+    """A network client cannot claim an uninitialized deployment without its secret."""
+    response = await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD, headers=headers)
+    assert response.status_code == 403
+    assert response.json()["message"] == "Invalid setup token"
+    assert response.json()["errors"] == ["Invalid setup token"]
+
+
+@pytest.mark.asyncio
+async def test_setup_fails_closed_when_token_is_not_configured(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing or weak server configuration must disable the claim endpoint."""
+    monkeypatch.setattr(settings, "SETUP_TOKEN", "")
+    response = await client.post(
+        "/api/v1/auth/setup",
+        json=_SETUP_PAYLOAD,
+        headers=_SETUP_HEADERS,
+    )
+    assert response.status_code == 503
+    assert "SETUP_TOKEN" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_setup_claim_is_serialized_across_requests(db_session: AsyncSession) -> None:
+    """Two valid simultaneous claims create exactly one initial administrator."""
+    del db_session  # The fixture creates and retains the disposable test schema.
+    transport = ASGITransport(app=app)
+    async with (
+        AsyncClient(transport=transport, base_url="http://test") as first_client,
+        AsyncClient(transport=transport, base_url="http://test") as second_client,
+    ):
+        first, second = await asyncio.gather(
+            first_client.post(
+                "/api/v1/auth/setup",
+                json=_SETUP_PAYLOAD,
+                headers=_SETUP_HEADERS,
+            ),
+            second_client.post(
+                "/api/v1/auth/setup",
+                json={**_SETUP_PAYLOAD, "admin_email": "second@example.com"},
+                headers=_SETUP_HEADERS,
+            ),
+        )
+
+    assert sorted((first.status_code, second.status_code)) == [201, 409]
+
+
+@pytest.mark.asyncio
 async def test_setup_creates_admin_and_clinic(client: AsyncClient) -> None:
     """First-run setup returns a working admin token tied to a new clinic."""
-    response = await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD)
+    response = await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD, headers=_SETUP_HEADERS)
     assert response.status_code == 201
     data = response.json()
     assert "access_token" in data
@@ -62,12 +122,13 @@ async def test_setup_creates_admin_and_clinic(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_setup_rejected_when_initialized(client: AsyncClient) -> None:
     """Once the system has an account, setup is closed (409)."""
-    first = await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD)
+    first = await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD, headers=_SETUP_HEADERS)
     assert first.status_code == 201
 
     second = await client.post(
         "/api/v1/auth/setup",
         json={**_SETUP_PAYLOAD, "admin_email": "other@example.com"},
+        headers=_SETUP_HEADERS,
     )
     assert second.status_code == 409
 
@@ -78,6 +139,7 @@ async def test_setup_weak_password(client: AsyncClient) -> None:
     response = await client.post(
         "/api/v1/auth/setup",
         json={**_SETUP_PAYLOAD, "admin_password": "weak"},
+        headers=_SETUP_HEADERS,
     )
     assert response.status_code == 422
 
@@ -85,7 +147,7 @@ async def test_setup_weak_password(client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_login(client: AsyncClient) -> None:
     """Test user login after first-run setup."""
-    await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD)
+    await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD, headers=_SETUP_HEADERS)
 
     response = await client.post(
         "/api/v1/auth/login",
