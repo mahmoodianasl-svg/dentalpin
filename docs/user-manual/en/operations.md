@@ -191,15 +191,20 @@ and restart; code merely being present on disk never enables a module.
 
 ## 7. Frontend rebuilds
 
-Community modules with a Nuxt layer require a frontend rebuild:
+Production frontend modules are compiled into the image at build time. A
+backend restart changes persisted activation state but cannot acquire a Nuxt
+layer that was absent from that image. Community modules with a Nuxt layer,
+and upgrades that change frontend code, require a frontend rebuild:
 
 ```bash
 docker compose build frontend && docker compose up -d frontend
 ```
 
-30-60s downtime on the UI. Official modules **don't** need a rebuild
-— they're already in the bundle; toggling visibility is a filter on
-`/api/v1/modules/-/active`.
+30-60s downtime on the UI. Official modules shipped in the current image do
+not need a rebuild merely to change installed state: their compiled routes,
+slots, and settings entries remain inaccessible until
+`/api/v1/modules/-/active` reports them installed. If activation state cannot
+be read, module-owned frontend routes fail closed.
 
 If the frontend starts but a module doesn't appear:
 

@@ -12,6 +12,7 @@ import { registerSettingsPage } from '~~/app/composables/useSettingsRegistry'
 
 export default defineNuxtPlugin(() => {
   registerSettingsPage({
+    module: 'budget',
     path: 'budget-expiry',
     category: 'billing',
     labelKey: 'budget.settings.cards.expiry.title',
@@ -24,6 +25,7 @@ export default defineNuxtPlugin(() => {
   })
 
   registerSettingsPage({
+    module: 'budget',
     path: 'budget-reminders',
     category: 'billing',
     labelKey: 'budget.settings.cards.reminders.title',
@@ -36,6 +38,7 @@ export default defineNuxtPlugin(() => {
   })
 
   registerSettingsPage({
+    module: 'budget',
     path: 'budget-public-link',
     category: 'billing',
     labelKey: 'budget.settings.cards.publicLink.title',

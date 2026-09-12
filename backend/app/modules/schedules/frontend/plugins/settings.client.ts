@@ -11,6 +11,7 @@ import { registerSettingsPage } from '~~/app/composables/useSettingsRegistry'
 
 export default defineNuxtPlugin(() => {
   registerSettingsPage({
+    module: 'schedules',
     path: 'clinic-hours',
     category: 'workspace',
     labelKey: 'schedules.settingsCards.clinicHoursTitle',
@@ -23,6 +24,7 @@ export default defineNuxtPlugin(() => {
   })
 
   registerSettingsPage({
+    module: 'schedules',
     path: 'professional-schedules',
     category: 'workspace',
     labelKey: 'schedules.settingsCards.professionalHoursTitle',

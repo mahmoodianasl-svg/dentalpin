@@ -29,6 +29,8 @@ export interface SlotEntry<Ctx = unknown> {
    * ``<module>.<slot>.<qualifier>`` — e.g. ``billing.patient.detail.sidebar``.
    */
   id: string
+  /** Owning module. Defaults to the first segment of ``id``. */
+  module?: string
   component: Component
   /**
    * Lower numbers render first. Ties resolve in registration order.
@@ -101,12 +103,17 @@ export function clearSlots(name?: string): void {
 export function resolveSlot<Ctx = unknown>(
   name: string,
   ctx: Ctx,
-  opts: { can: (p: string) => boolean }
+  opts: {
+    can: (p: string) => boolean
+    activeModules?: ReadonlySet<string>
+  }
 ): SlotEntry<Ctx>[] {
   const state = useSlotState()
   const entries = (state.value[name] || []) as SlotEntry<Ctx>[]
   return [...entries]
     .filter((entry) => {
+      const owner = entry.module ?? entry.id.split('.')[0] ?? entry.id
+      if (opts.activeModules && !opts.activeModules.has(owner)) return false
       if (entry.permission && !opts.can(entry.permission)) return false
       if (entry.condition && !entry.condition(ctx)) return false
       return true
@@ -120,9 +127,11 @@ export function resolveSlot<Ctx = unknown>(
  */
 export function useModuleSlots() {
   const { can } = usePermissions()
+  const { active } = useModules()
 
   function resolve<Ctx = unknown>(name: string, ctx: Ctx): SlotEntry<Ctx>[] {
-    return resolveSlot<Ctx>(name, ctx, { can })
+    const activeModules = new Set((active.value ?? []).map(module => module.name))
+    return resolveSlot<Ctx>(name, ctx, { can, activeModules })
   }
 
   return {

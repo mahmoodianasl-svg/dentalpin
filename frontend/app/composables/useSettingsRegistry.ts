@@ -53,6 +53,8 @@ export interface SettingsCategory {
 export interface SettingsPageEntry {
   /** URL slug. Must be unique within its category. */
   path: string
+  /** Owning runtime module. Host-owned settings pages leave this unset. */
+  module?: string
   category: SettingsCategoryId
   labelKey: string
   descriptionKey?: string
@@ -232,11 +234,15 @@ export function useSettingsRegistry() {
   const { t } = useI18n()
   const { can, canAny } = usePermissions()
   const auth = useAuth()
+  const { active } = useModules()
 
   const version = useRegistryVersion()
   const dismissed = useDismissedState()
 
   function isPageVisible(page: SettingsPageEntry): boolean {
+    if (page.module && !(active.value ?? []).some(module => module.name === page.module)) {
+      return false
+    }
     if (!page.permission) return true
     return Array.isArray(page.permission)
       ? canAny(page.permission)

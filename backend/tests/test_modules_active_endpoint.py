@@ -133,3 +133,18 @@ async def test_active_navigation_filtered_for_hygienist(
 async def test_active_requires_auth(client: AsyncClient) -> None:
     response = await client.get("/api/v1/modules/-/active")
     assert response.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_active_names_is_public_and_minimal(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    await _reconcile(db_session)
+
+    response = await client.get("/api/v1/modules/-/active-names")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload == sorted(payload)
+    assert {"patients", "budget", "billing"}.issubset(payload)
+    assert all(isinstance(name, str) for name in payload)

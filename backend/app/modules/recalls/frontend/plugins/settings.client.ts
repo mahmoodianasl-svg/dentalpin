@@ -11,6 +11,7 @@ import { registerSettingsPage } from '~~/app/composables/useSettingsRegistry'
 
 export default defineNuxtPlugin(() => {
   registerSettingsPage({
+    module: 'recalls',
     path: 'recalls',
     category: 'clinical',
     labelKey: 'recalls.settings.title',

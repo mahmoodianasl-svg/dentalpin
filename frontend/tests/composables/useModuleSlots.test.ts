@@ -61,4 +61,23 @@ describe('useModuleSlots', () => {
     const onlyUngated = resolveSlot('ordered.slot', {}, { can: () => false })
     expect(onlyUngated.map(e => e.id)).toEqual(['b'])
   })
+
+  it('fails closed for slots owned by inactive modules', async () => {
+    const { registerSlot, resolveSlot } = await import('~/composables/useModuleSlots')
+
+    const Demo = defineComponent({ name: 'Demo', render: () => h('span', 'demo') })
+    registerSlot('test.slot', {
+      id: 'periodontogram.patient.diagnosis',
+      component: Demo
+    })
+
+    expect(resolveSlot('test.slot', {}, {
+      can: () => true,
+      activeModules: new Set()
+    })).toEqual([])
+    expect(resolveSlot('test.slot', {}, {
+      can: () => true,
+      activeModules: new Set(['periodontogram'])
+    })).toHaveLength(1)
+  })
 })
