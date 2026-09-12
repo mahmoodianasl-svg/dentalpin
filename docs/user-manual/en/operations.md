@@ -14,8 +14,21 @@ operator runs — not the Python internals.
 
 - Docker + Docker Compose on the host.
 - Cloned DentalPin repo (or equivalent deploy artefacts).
-- `.env` filled in with `POSTGRES_PASSWORD`, `SECRET_KEY`, etc.
+- `.env` filled in with `POSTGRES_PASSWORD`, `SECRET_KEY`, `SETUP_TOKEN`, etc.
 - A running stack: `docker compose up -d`.
+
+For a real, unseeded installation, generate `SETUP_TOKEN` independently from
+the staff JWT secret before starting the backend:
+
+```bash
+openssl rand -hex 32
+```
+
+Put the generated value in `.env`, then enter it in the **Setup token** field
+on `/setup`. The token is sent only in the setup request header; it is not
+stored in the clinic database. After the first administrator is created, the
+endpoint self-closes. You may rotate `SETUP_TOKEN` and restart the backend
+without invalidating staff sessions.
 
 Smoke-check:
 

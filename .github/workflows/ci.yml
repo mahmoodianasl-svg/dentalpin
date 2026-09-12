@@ -229,6 +229,7 @@ jobs:
     env:
       POSTGRES_PASSWORD: testpass
       SECRET_KEY: ci-secret-key-for-e2e
+      SETUP_TOKEN: ci-setup-token-at-least-32-characters
     steps:
       - uses: actions/checkout@v5
       - name: Write .env
@@ -236,6 +237,7 @@ jobs:
           cat > .env <<EOF
           POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
           SECRET_KEY=${SECRET_KEY}
+          SETUP_TOKEN=${SETUP_TOKEN}
           ENVIRONMENT=development
           EOF
       - name: Boot db + backend

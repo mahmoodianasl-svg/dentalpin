@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator
 
 # Set TESTING before importing settings
 os.environ["TESTING"] = "true"
+os.environ["SETUP_TOKEN"] = "test-setup-token-at-least-32-characters"
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
