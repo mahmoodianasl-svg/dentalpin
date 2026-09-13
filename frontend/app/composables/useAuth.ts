@@ -6,6 +6,7 @@ import type {
   MeResponse,
   ApiResponse
 } from '~/types'
+import { appendResponseHeader } from 'h3'
 
 // Client-only module-level dedupe slot for the in-flight refresh promise.
 // Storing a Promise inside useState() leaks it into the SSR payload, which
@@ -120,12 +121,25 @@ export function useAuth() {
 
     const run = (async (): Promise<boolean> => {
       try {
-        const response = await $fetch<AuthResponse>('/api/v1/auth/refresh', {
+        const result = await $fetch.raw<AuthResponse>('/api/v1/auth/refresh', {
           baseURL: apiBaseUrl.value,
           method: 'POST',
           credentials: 'include',
           headers: sessionHeaders()
         })
+        const response = result._data!
+
+        // SSR consumes the backend response. Forward rotated cookies onto the
+        // Nuxt page response so the browser replaces its old refresh JWT.
+        // Otherwise the next navigation replays that JWT and revokes the session.
+        if (import.meta.server) {
+          const event = useRequestEvent()
+          if (event) {
+            for (const cookie of result.headers.getSetCookie()) {
+              appendResponseHeader(event, 'set-cookie', cookie)
+            }
+          }
+        }
 
         accessToken.value = response.access_token
         user.value = response.user
