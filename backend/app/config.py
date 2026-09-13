@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     SETUP_TOKEN: str = ""
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    REFRESH_SESSION_ABSOLUTE_DAYS: int = 30
     ALGORITHM: str = "HS256"
     # Independent secret used to sign the public-budget verification
     # cookies (ADR 0006). Falls back to ``SECRET_KEY`` for local/dev

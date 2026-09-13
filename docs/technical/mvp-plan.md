@@ -162,7 +162,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 **JWT Configuration:**
 - Access token TTL: 15 minutes
-- Refresh token TTL: 7 days
+- Refresh token TTL: 7 days; each rotation is bounded by the original browser session's 30-day absolute deadline
 - Algorithm: HS256
 - Secret from environment variable
 - Token revocation: User model includes `token_version` field. On password change or "logout all", increment version. Validate version claim on refresh.
@@ -181,7 +181,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 POST /api/v1/auth/setup     → Create initial admin; set protected session cookie
 POST /api/v1/auth/login     → Verify credentials; return short-lived access token
 POST /api/v1/auth/refresh   → Validate HttpOnly session + CSRF; return access token
-POST /api/v1/auth/logout    → Validate CSRF and expire browser session cookies
+POST /api/v1/auth/logout    → Validate CSRF, revoke server session, expire browser cookies
 GET  /api/v1/auth/me        → Return current user info
 ```
 
@@ -189,6 +189,12 @@ The browser keeps the short-lived access JWT in Nuxt memory and sends it in
 the `Authorization` header. The seven-day refresh JWT is never returned in
 JSON: the backend owns it in a `Secure`, `HttpOnly`, `SameSite=Strict` cookie.
 Refresh and logout also require a matching double-submit CSRF cookie/header.
+Refresh credentials have a unique session ID and nonce; the backend stores only
+the current credential hash. Refresh takes a database row lock to rotate it
+atomically. A valid older credential revokes that session on reuse. Login and
+setup create separate sessions, so logout revokes only the current browser.
+Existing cookies issued before this migration lack a session ID and require
+one fresh login. Issued access tokens remain usable until their 15-minute expiry.
 
 **Auth Service (app/core/auth/service.py):**
 - `hash_password(password)` → bcrypt hash

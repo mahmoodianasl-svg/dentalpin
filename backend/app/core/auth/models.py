@@ -1,9 +1,10 @@
 """Core authentication and authorization models."""
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from sqlalchemy import ForeignKey, String, text
+from sqlalchemy import DateTime, ForeignKey, String, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -70,10 +71,27 @@ class User(Base, TimestampMixin):
     memberships: Mapped[list["ClinicMembership"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    refresh_sessions: Mapped[list["RefreshSession"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
     @property
     def full_name(self) -> str:
         return f"{self.first_name} {self.last_name}"
+
+
+class RefreshSession(Base):
+    """One browser session; only the current rotated credential is valid."""
+
+    __tablename__ = "refresh_sessions"
+
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    credential_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    absolute_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    user: Mapped["User"] = relationship(back_populates="refresh_sessions")
 
 
 def _derive_is_professional(context) -> bool:  # noqa: ANN001 — SQLAlchemy ExecutionContext

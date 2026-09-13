@@ -1,14 +1,19 @@
 """Tests for authentication endpoints."""
 
 import asyncio
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
 from app.config import settings
+from app.core.auth.models import RefreshSession
 from app.core.auth.router import _set_session_cookies
+from app.core.auth.service import decode_token
 from app.main import app
 from app.version import VERSION
 
@@ -202,6 +207,22 @@ async def test_refresh_rejects_missing_session_cookie(client: AsyncClient) -> No
 
 
 @pytest.mark.asyncio
+async def test_legacy_refresh_cookie_requires_new_login(client: AsyncClient) -> None:
+    """Older signed JWTs without a tracked session cannot bypass rotation."""
+    await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD, headers=_SETUP_HEADERS)
+    from jose import jwt
+
+    current = decode_token(client.cookies.get("dentalpin_refresh"))
+    current.pop("sid")
+    current.pop("jti")
+    legacy = jwt.encode(current, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    csrf = client.cookies.get("dentalpin_csrf")
+    client.cookies.set("dentalpin_refresh", legacy)
+    response = await client.post("/api/v1/auth/refresh", headers={"X-DentalPin-CSRF-Token": csrf})
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_logout_clears_session_cookies(client: AsyncClient) -> None:
     """Logout expires both browser session cookies after CSRF validation."""
     await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD, headers=_SETUP_HEADERS)
@@ -215,6 +236,96 @@ async def test_logout_clears_session_cookies(client: AsyncClient) -> None:
     assert response.status_code == 204
     assert client.cookies.get("dentalpin_refresh") is None
     assert client.cookies.get("dentalpin_csrf") is None
+
+
+@pytest.mark.asyncio
+async def test_refresh_rotates_and_replay_revokes_session(client: AsyncClient) -> None:
+    await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD, headers=_SETUP_HEADERS)
+    old_cookie = client.cookies.get("dentalpin_refresh")
+    csrf = client.cookies.get("dentalpin_csrf")
+    assert old_cookie and csrf
+
+    first = await client.post("/api/v1/auth/refresh", headers={"X-DentalPin-CSRF-Token": csrf})
+    assert first.status_code == 200
+    new_cookie = client.cookies.get("dentalpin_refresh")
+    assert new_cookie and new_cookie != old_cookie
+
+    client.cookies.set("dentalpin_refresh", old_cookie)
+    replay = await client.post("/api/v1/auth/refresh", headers={"X-DentalPin-CSRF-Token": csrf})
+    assert replay.status_code == 401
+    client.cookies.set("dentalpin_refresh", new_cookie)
+    revoked = await client.post("/api/v1/auth/refresh", headers={"X-DentalPin-CSRF-Token": csrf})
+    assert revoked.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout_revokes_cookie_even_if_replayed_after_clear(client: AsyncClient) -> None:
+    await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD, headers=_SETUP_HEADERS)
+    old_cookie = client.cookies.get("dentalpin_refresh")
+    csrf = client.cookies.get("dentalpin_csrf")
+    assert old_cookie and csrf
+    logout = await client.post("/api/v1/auth/logout", headers={"X-DentalPin-CSRF-Token": csrf})
+    assert logout.status_code == 204
+    client.cookies.set("dentalpin_refresh", old_cookie)
+    client.cookies.set("dentalpin_csrf", csrf)
+    rejected = await client.post("/api/v1/auth/refresh", headers={"X-DentalPin-CSRF-Token": csrf})
+    assert rejected.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_absolute_lifetime_cannot_slide(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD, headers=_SETUP_HEADERS)
+    cookie = client.cookies.get("dentalpin_refresh")
+    csrf = client.cookies.get("dentalpin_csrf")
+    assert cookie and csrf
+    sid = UUID(decode_token(cookie)["sid"])
+    session = await db_session.scalar(select(RefreshSession).where(RefreshSession.id == sid))
+    assert session is not None
+    session.absolute_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    await db_session.commit()
+
+    expired = await client.post("/api/v1/auth/refresh", headers={"X-DentalPin-CSRF-Token": csrf})
+    assert expired.status_code == 401
+    await db_session.refresh(session)
+    assert session.revoked_at is not None
+
+
+@pytest.mark.asyncio
+async def test_replay_revokes_only_its_own_browser_session(client: AsyncClient) -> None:
+    await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD, headers=_SETUP_HEADERS)
+    first_cookie = client.cookies.get("dentalpin_refresh")
+    first_csrf = client.cookies.get("dentalpin_csrf")
+    assert first_cookie and first_csrf
+
+    second_login = await client.post(
+        "/api/v1/auth/login",
+        data={"username": "admin@example.com", "password": "SecurePass123"},
+    )
+    assert second_login.status_code == 200
+    second_cookie = client.cookies.get("dentalpin_refresh")
+    second_csrf = client.cookies.get("dentalpin_csrf")
+    assert second_cookie and second_csrf and second_cookie != first_cookie
+
+    client.cookies.set("dentalpin_refresh", first_cookie)
+    client.cookies.set("dentalpin_csrf", first_csrf)
+    first_refresh = await client.post(
+        "/api/v1/auth/refresh", headers={"X-DentalPin-CSRF-Token": first_csrf}
+    )
+    assert first_refresh.status_code == 200
+    client.cookies.set("dentalpin_refresh", first_cookie)
+    replay = await client.post(
+        "/api/v1/auth/refresh", headers={"X-DentalPin-CSRF-Token": first_csrf}
+    )
+    assert replay.status_code == 401
+
+    client.cookies.set("dentalpin_refresh", second_cookie)
+    client.cookies.set("dentalpin_csrf", second_csrf)
+    other_session = await client.post(
+        "/api/v1/auth/refresh", headers={"X-DentalPin-CSRF-Token": second_csrf}
+    )
+    assert other_session.status_code == 200
 
 
 def test_production_session_cookie_flags(monkeypatch: pytest.MonkeyPatch) -> None:

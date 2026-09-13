@@ -1,8 +1,9 @@
 """Authentication router with rate limiting."""
 
 import secrets
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -19,7 +20,7 @@ from app.core.schemas import ApiResponse, PaginatedApiResponse
 from app.database import get_db
 
 from .dependencies import ClinicContext, get_clinic_context, get_current_user, require_permission
-from .models import Clinic, ClinicMembership, User
+from .models import Clinic, ClinicMembership, RefreshSession, User
 from .permissions import (
     CORE_PERMISSIONS,
     PROFESSIONAL_ROLES,
@@ -47,6 +48,7 @@ from .service import (
     create_refresh_token,
     decode_token,
     hash_password,
+    refresh_credential_hash,
     validate_password_strength,
     verify_password,
 )
@@ -100,6 +102,27 @@ def _set_session_cookies(
     )
     response.headers["Cache-Control"] = "no-store"
     return csrf_token
+
+
+async def _create_browser_session(db: AsyncSession, user: User) -> str:
+    """Persist the credential before exposing it to the browser."""
+    now = datetime.now(UTC)
+    session = RefreshSession(
+        user_id=user.id,
+        created_at=now,
+        absolute_expires_at=now + timedelta(days=settings.REFRESH_SESSION_ABSOLUTE_DAYS),
+    )
+    session.id = uuid4()
+    token = create_refresh_token(
+        user.id,
+        token_version=user.token_version,
+        session_id=session.id,
+        absolute_expires_at=session.absolute_expires_at,
+    )
+    session.credential_hash = refresh_credential_hash(token)
+    db.add(session)
+    await db.commit()
+    return token
 
 
 def _clear_session_cookies(response: Response) -> None:
@@ -232,7 +255,7 @@ async def setup(
     access_token = create_access_token(
         user.id, clinic_id=clinic.id, token_version=user.token_version
     )
-    refresh_token = create_refresh_token(user.id, token_version=user.token_version)
+    refresh_token = await _create_browser_session(db, user)
 
     _set_session_cookies(response, refresh_token)
     return TokenResponse(access_token=access_token)
@@ -277,7 +300,7 @@ async def login(
         clinic_id=clinic_id,
         token_version=user.token_version,
     )
-    refresh_token = create_refresh_token(user.id, token_version=user.token_version)
+    refresh_token = await _create_browser_session(db, user)
 
     _set_session_cookies(response, refresh_token)
     return TokenResponse(access_token=access_token)
@@ -304,22 +327,41 @@ async def refresh_token(
         user_id = payload.get("sub")
         token_type = payload.get("type")
         token_version = payload.get("token_version", 0)
+        session_id = UUID(payload["sid"])
+        parsed_user_id = UUID(user_id)
 
-        if user_id is None or token_type != "refresh":
+        if user_id is None or token_type != "refresh" or not payload.get("jti"):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid refresh token",
             )
 
-    except (JWTError, TypeError, ValueError):
+    except (JWTError, KeyError, TypeError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
         )
 
+    # A row lock serializes competing rotations, including across replicas.
+    session = await db.scalar(
+        select(RefreshSession).where(RefreshSession.id == session_id).with_for_update()
+    )
+    now = datetime.now(UTC)
+    if session is None or session.user_id != parsed_user_id or session.revoked_at is not None:
+        raise HTTPException(status_code=401, detail="Refresh session revoked or unknown")
+    if session.absolute_expires_at <= now:
+        session.revoked_at = now
+        await db.commit()
+        raise HTTPException(status_code=401, detail="Refresh session expired")
+    if not secrets.compare_digest(session.credential_hash, refresh_credential_hash(refresh_cookie)):
+        # Commit the revocation before raising: failed requests otherwise roll back.
+        session.revoked_at = now
+        await db.commit()
+        raise HTTPException(status_code=401, detail="Refresh credential reuse detected")
+
     # Fetch user with memberships and clinics
     result = await db.execute(
-        select(User).options(selectinload(User.memberships)).where(User.id == UUID(user_id))
+        select(User).options(selectinload(User.memberships)).where(User.id == parsed_user_id)
     )
     user = result.scalar_one_or_none()
 
@@ -364,7 +406,14 @@ async def refresh_token(
         clinic_id=clinic_id,
         token_version=user.token_version,
     )
-    new_refresh_token = create_refresh_token(user.id, token_version=user.token_version)
+    new_refresh_token = create_refresh_token(
+        user.id,
+        token_version=user.token_version,
+        session_id=session.id,
+        absolute_expires_at=session.absolute_expires_at,
+    )
+    session.credential_hash = refresh_credential_hash(new_refresh_token)
+    await db.commit()
     _set_session_cookies(response, new_refresh_token, csrf_token=verified_csrf)
 
     return AuthResponse(
@@ -378,11 +427,27 @@ async def refresh_token(
 async def logout(
     request: Request,
     response: Response,
+    db: Annotated[AsyncSession, Depends(get_db)],
     csrf_token: Annotated[str | None, Header(alias=_CSRF_HEADER_NAME)] = None,
 ) -> Response:
-    """Clear the browser session after validating its CSRF nonce."""
-    if request.cookies.get(_REFRESH_COOKIE_NAME) is not None:
+    """Revoke the current session server-side, then clear browser cookies."""
+    refresh_cookie = request.cookies.get(_REFRESH_COOKIE_NAME)
+    if refresh_cookie is not None:
         _verify_csrf(request, csrf_token)
+        try:
+            payload = decode_token(refresh_cookie)
+            if payload.get("type") == "refresh":
+                session_id = UUID(payload["sid"])
+                session = await db.scalar(
+                    select(RefreshSession).where(RefreshSession.id == session_id).with_for_update()
+                )
+                if session and secrets.compare_digest(
+                    session.credential_hash, refresh_credential_hash(refresh_cookie)
+                ):
+                    session.revoked_at = datetime.now(UTC)
+                    await db.commit()
+        except (JWTError, KeyError, TypeError, ValueError):
+            pass
     _clear_session_cookies(response)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
