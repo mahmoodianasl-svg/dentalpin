@@ -7,7 +7,8 @@ WORKDIR /app
 # Install runtime libraries plus temporary build tooling. Build-only packages are
 # explicitly purged after the locked Python graph is installed so they cannot
 # inflate the production image or its vulnerability surface.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     libcairo2 \

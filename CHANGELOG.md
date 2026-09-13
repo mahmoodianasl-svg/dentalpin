@@ -9,6 +9,12 @@ architecture: the monolithic `clinical` module is gone, replaced by
 four purpose-built modules, and every official module now ships its
 frontend as a Nuxt layer under its own Python package.
 
+## Unreleased
+
+- SEC-003: Track staff browser refresh sessions, atomically rotate credentials,
+  revoke on reuse or logout, and enforce an absolute 30-day session deadline.
+  Older browser cookies require a fresh login after migration.
+
 ## [2.2.3] - 2026-08-27
 
 ### Fixed
