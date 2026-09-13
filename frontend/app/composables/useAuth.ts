@@ -19,6 +19,8 @@ let clientRefreshInFlight: Promise<boolean> | null = null
 export function useAuth() {
   const config = useRuntimeConfig()
   const router = useRouter()
+  // Capture the SSR request context before refresh awaits a backend call.
+  const requestEvent = import.meta.server ? useRequestEvent() : undefined
 
   // Use different API URL for server (Docker internal) vs client (browser)
   const apiBaseUrl = computed(() =>
@@ -133,10 +135,9 @@ export function useAuth() {
         // Nuxt page response so the browser replaces its old refresh JWT.
         // Otherwise the next navigation replays that JWT and revokes the session.
         if (import.meta.server) {
-          const event = useRequestEvent()
-          if (event) {
+          if (requestEvent) {
             for (const cookie of result.headers.getSetCookie()) {
-              appendResponseHeader(event, 'set-cookie', cookie)
+              appendResponseHeader(requestEvent, 'set-cookie', cookie)
             }
           }
         }
