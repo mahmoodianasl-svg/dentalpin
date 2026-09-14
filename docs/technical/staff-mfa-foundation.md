@@ -30,3 +30,19 @@ without a bypass to patient data.
 Do not persist pending TOTP material unless a production encryption key is
 configured. Backups of these tables require the separately stored key for
 restoration. Recovery-code digests must not use the token-signing secret.
+
+## Cryptographic primitives
+
+The storage foundation includes a settings-independent MFA service layer. It
+uses standard 30-second, six-digit HMAC-SHA-1 TOTP for authenticator-app
+compatibility, permits at most one adjacent time step, and returns the accepted
+step so callers can atomically prevent replay with `last_accepted_step`.
+
+TOTP seeds use AES-256-GCM with the staff user ID and key ID as associated data.
+The encryption key is explicit and must decode to exactly 256 bits; missing or
+malformed material fails closed. Pending-auth challenges contain 256 random
+bits and persist only a SHA-256 digest. Recovery codes contain 128 random bits
+and persist only an HMAC-SHA-256 digest under an independent pepper of at least
+256 bits. The module does not read configuration or issue sessions; endpoint
+wiring must source encryption keys and recovery peppers from secret management,
+apply database row locks, expiry and attempt limits, and avoid logging inputs.
