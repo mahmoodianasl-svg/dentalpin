@@ -173,8 +173,10 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 - `/refresh`: 10 per minute per user
 
 **Password Requirements:**
-- Minimum 8 characters
-- At least one letter and one number
+- New staff passwords: 15–1024 characters; passphrases and Unicode are allowed without composition rules.
+- Reject exact matches against the bundled 10,000 common-password list, case-insensitively. The list is an offline baseline, not a live breach lookup.
+- New hashes prehash UTF-8 input before bcrypt so bytes after bcrypt's 72-byte limit matter. Existing bcrypt hashes remain verifiable; passwords are not silently reset.
+- SEC-004 remains open until staff MFA enrollment, challenge, and recovery are implemented and tested. The longer password policy does not replace MFA.
 
 **Auth Router (app/core/auth/router.py):**
 ```

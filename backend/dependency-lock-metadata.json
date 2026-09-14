@@ -4,7 +4,7 @@
     "uv": "0.12.1",
     "python": "3.11.15"
   },
-  "pyproject_sha256": "3687265b59197fb99fdbb5c008eea561f5256b12636296364d66a4437939a9e2",
+  "pyproject_sha256": "d5502e6d8f4e8cb4667e5558dbfaf42218e11dd79c4b4c786bac62a2a633daad",
   "requirements_lock_sha256": "c615f5f7478b35e45584c95e103888f77b24b7da497d025071cdb9e473c06dec",
   "requirements_dev_lock_sha256": "92d64b144099d9c24d4c8b24549d68f0a3117356bad0adb58007600368e5c80e"
 }
