@@ -1,6 +1,7 @@
 # SEC-004: staff MFA storage foundation
 
-Status: partial implementation — storage and cryptographic primitives only; enforcement pending.
+Status: partial implementation — storage, cryptographic primitives, runtime
+secret validation, and pending-challenge construction; enforcement pending.
 
 This migration adds three staff-only tables and changes no authentication endpoint.
 Password-only login, setup, and refresh still issue their current sessions until
