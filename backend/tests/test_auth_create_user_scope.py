@@ -39,6 +39,7 @@ async def test_create_user_in_own_clinic_succeeds(
 async def test_create_user_rejects_common_password(
     client: AsyncClient,
     auth_headers: dict[str, str],
+    test_clinic: Clinic,
 ) -> None:
     r = await client.post(
         "/api/v1/auth/users",
