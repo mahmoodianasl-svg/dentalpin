@@ -48,3 +48,18 @@ and persist only an HMAC-SHA-256 digest under an independent pepper of at least
 256 bits. The module does not read configuration or issue sessions; endpoint
 wiring must source encryption keys and recovery peppers from secret management,
 apply database row locks, expiry and attempt limits, and avoid logging inputs.
+
+The deployment surface now exposes `MFA_ENCRYPTION_KEY_ID`,
+`MFA_ENCRYPTION_KEY`, and `MFA_RECOVERY_PEPPER`. The two secret values are
+Base64- or Base64URL-encoded independent random values of at least 256 bits and
+must come from deployment secret management, not the repository. The key
+loader validates all three values before use. Empty defaults keep the
+not-yet-enforced foundation bootable but fail closed when an MFA operation
+requests the keys.
+
+The service can construct a five-minute pending-auth row for `login`,
+`enrollment`, or `recovery`. It stores only the opaque challenge digest,
+starts with zero attempts, rejects a fifth attempt, and rejects expired or
+consumed rows. Endpoint code must obtain the row with `SELECT ... FOR UPDATE`
+before incrementing attempts or consuming it; these helpers intentionally do
+not pretend an in-memory check is an atomic database transition.

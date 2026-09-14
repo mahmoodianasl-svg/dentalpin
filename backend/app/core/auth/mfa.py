@@ -13,10 +13,13 @@ import hashlib
 import hmac
 import secrets
 import struct
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from uuid import UUID
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+from .models import StaffMfaChallenge
 
 _TOTP_STEP_SECONDS = 30
 _TOTP_DIGITS = 6
@@ -24,6 +27,19 @@ _MIN_TOTP_SECRET_BYTES = 20
 _AES_KEY_BYTES = 32
 _AES_NONCE_BYTES = 12
 _RECOVERY_PEPPER_BYTES = 32
+_KEY_ID_CHARACTERS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+MFA_CHALLENGE_LIFETIME = timedelta(minutes=5)
+MFA_CHALLENGE_MAX_ATTEMPTS = 5
+MFA_CHALLENGE_PURPOSES = frozenset({"login", "enrollment", "recovery"})
+
+
+@dataclass(frozen=True)
+class StaffMfaKeyMaterial:
+    """Validated, independent secret-manager values for staff MFA."""
+
+    key_id: str
+    encoded_encryption_key: str
+    recovery_pepper: bytes
 
 
 def generate_totp_secret() -> str:
@@ -87,16 +103,44 @@ def _decode_encryption_key(encoded_key: str) -> bytes:
     try:
         key = base64.b64decode(encoded_key, altchars=b"-_", validate=True)
     except (binascii.Error, ValueError) as exc:
-        raise ValueError("MFA encryption key must be valid Base64URL") from exc
+        raise ValueError("MFA encryption key must be valid Base64 or Base64URL") from exc
     if len(key) != _AES_KEY_BYTES:
         raise ValueError("MFA encryption key must contain exactly 256 bits")
     return key
 
 
+def _decode_recovery_pepper(encoded_pepper: str) -> bytes:
+    try:
+        pepper = base64.b64decode(encoded_pepper, altchars=b"-_", validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("MFA recovery pepper must be valid Base64 or Base64URL") from exc
+    if len(pepper) < _RECOVERY_PEPPER_BYTES:
+        raise ValueError("MFA recovery pepper must contain at least 256 bits")
+    return pepper
+
+
 def _factor_aad(user_id: UUID, key_id: str) -> bytes:
-    if not key_id or len(key_id) > 64:
-        raise ValueError("MFA encryption key id must contain 1 to 64 characters")
+    if not 1 <= len(key_id) <= 64 or any(
+        character not in _KEY_ID_CHARACTERS for character in key_id
+    ):
+        raise ValueError("MFA encryption key id must use 1 to 64 safe characters")
     return f"dentalpin:staff-mfa:v1:{key_id}:{user_id}".encode()
+
+
+def load_staff_mfa_key_material(
+    *,
+    key_id: str,
+    encoded_encryption_key: str,
+    encoded_recovery_pepper: str,
+) -> StaffMfaKeyMaterial:
+    """Validate deployment secrets before any enrollment or recovery operation."""
+    _factor_aad(UUID(int=0), key_id)
+    _decode_encryption_key(encoded_encryption_key)
+    return StaffMfaKeyMaterial(
+        key_id=key_id,
+        encoded_encryption_key=encoded_encryption_key,
+        recovery_pepper=_decode_recovery_pepper(encoded_recovery_pepper),
+    )
 
 
 def encrypt_totp_secret(secret: str, *, user_id: UUID, key_id: str, encoded_key: str) -> str:
@@ -154,7 +198,48 @@ def hash_pending_challenge(challenge: str) -> str:
 
 def verify_pending_challenge(challenge: str, expected_hash: str) -> bool:
     """Compare an opaque pending-auth challenge with its stored digest."""
+    if not challenge or len(expected_hash) != 64:
+        return False
     return secrets.compare_digest(hash_pending_challenge(challenge), expected_hash)
+
+
+def issue_pending_challenge(
+    *,
+    user_id: UUID,
+    purpose: str,
+    now: datetime,
+) -> tuple[str, StaffMfaChallenge]:
+    """Build a short-lived password-verified challenge ready for persistence."""
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("Pending-auth challenge time must be timezone-aware")
+    if purpose not in MFA_CHALLENGE_PURPOSES:
+        raise ValueError("Unsupported pending-auth challenge purpose")
+    challenge, challenge_hash = generate_pending_challenge()
+    return challenge, StaffMfaChallenge(
+        user_id=user_id,
+        challenge_hash=challenge_hash,
+        purpose=purpose,
+        attempts=0,
+        expires_at=now + MFA_CHALLENGE_LIFETIME,
+        created_at=now,
+    )
+
+
+def pending_challenge_is_usable(
+    record: StaffMfaChallenge,
+    challenge: str,
+    *,
+    now: datetime,
+) -> bool:
+    """Check a locked record; callers remain responsible for atomic mutation."""
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("Pending-auth challenge time must be timezone-aware")
+    return (
+        record.consumed_at is None
+        and record.expires_at > now
+        and record.attempts < MFA_CHALLENGE_MAX_ATTEMPTS
+        and verify_pending_challenge(challenge, record.challenge_hash)
+    )
 
 
 def _normalize_recovery_code(code: str) -> str:
