@@ -30,7 +30,7 @@ _SETUP_PAYLOAD = {
     "admin_first_name": "Admin",
     "admin_last_name": "User",
     "admin_email": "admin@example.com",
-    "admin_password": "SecurePass123",
+    "admin_password": "Secure Staff Passphrase 2026",
     "clinic_name": "My Clinic",
     "clinic_tax_id": "B12345678",
 }
@@ -154,13 +154,24 @@ async def test_setup_weak_password(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_setup_rejects_long_common_password(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/auth/setup",
+        json={**_SETUP_PAYLOAD, "admin_password": "films+pic+galeries"},
+        headers=_SETUP_HEADERS,
+    )
+    assert response.status_code == 422
+    assert "commonly used" in response.json()["message"]
+
+
+@pytest.mark.asyncio
 async def test_login(client: AsyncClient) -> None:
     """Test user login after first-run setup."""
     await client.post("/api/v1/auth/setup", json=_SETUP_PAYLOAD, headers=_SETUP_HEADERS)
 
     response = await client.post(
         "/api/v1/auth/login",
-        data={"username": "admin@example.com", "password": "SecurePass123"},
+        data={"username": "admin@example.com", "password": _SETUP_PAYLOAD["admin_password"]},
     )
     assert response.status_code == 200
     data = response.json()
@@ -301,7 +312,7 @@ async def test_replay_revokes_only_its_own_browser_session(client: AsyncClient) 
 
     second_login = await client.post(
         "/api/v1/auth/login",
-        data={"username": "admin@example.com", "password": "SecurePass123"},
+        data={"username": "admin@example.com", "password": _SETUP_PAYLOAD["admin_password"]},
     )
     assert second_login.status_code == 200
     second_cookie = client.cookies.get("dentalpin_refresh")

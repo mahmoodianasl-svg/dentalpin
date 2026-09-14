@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -12,13 +13,36 @@ from app.config import settings
 
 
 def hash_password(password: str) -> str:
-    """Hash a password using bcrypt."""
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    """Hash all UTF-8 bytes, including passwords longer than bcrypt's 72-byte limit."""
+    digest = sha256(password.encode("utf-8")).digest()
+    return "bcrypt-sha256$" + bcrypt.hashpw(digest, bcrypt.gensalt()).decode("ascii")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash."""
-    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    """Verify new pre-hashed passwords and legacy bcrypt accounts."""
+    encoded = plain_password.encode("utf-8")
+    if hashed_password.startswith("bcrypt-sha256$"):
+        return bcrypt.checkpw(sha256(encoded).digest(), hashed_password[14:].encode("ascii"))
+    if len(encoded) > 72:
+        return False  # Never accept a legacy hash on the strength of a truncated prefix.
+    return bcrypt.checkpw(encoded, hashed_password.encode("ascii"))
+
+
+_COMMON_PASSWORDS_FILE = Path(__file__).with_name("common_passwords.txt")
+_COMMON_PASSWORDS = frozenset(
+    line.casefold() for line in _COMMON_PASSWORDS_FILE.read_text(encoding="utf-8").splitlines()
+)
+
+
+def validate_staff_password(password: str) -> tuple[bool, str]:
+    """Require a long passphrase and block known common credentials, without composition rules."""
+    if len(password) < 15:
+        return False, "Password must be at least 15 characters"
+    if len(password) > 1024:
+        return False, "Password must be at most 1024 characters"
+    if password.casefold() in _COMMON_PASSWORDS:
+        return False, "Choose a password that is not commonly used"
+    return True, ""
 
 
 def validate_password_strength(password: str) -> tuple[bool, str]:
