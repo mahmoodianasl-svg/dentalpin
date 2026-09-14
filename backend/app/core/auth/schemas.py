@@ -143,7 +143,7 @@ class UserCreate(BaseModel):
     """Schema for admin creating a new user."""
 
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=15, max_length=1024)
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)
     role: str = Field(description="Role: admin, dentist, hygienist, assistant, receptionist")
@@ -216,7 +216,7 @@ class SystemSetup(BaseModel):
     admin_first_name: str = Field(min_length=1, max_length=100)
     admin_last_name: str = Field(min_length=1, max_length=100)
     admin_email: EmailStr
-    admin_password: str = Field(min_length=8)
+    admin_password: str = Field(min_length=15, max_length=1024)
     clinic_name: str = Field(min_length=1, max_length=200)
     clinic_tax_id: str = Field(min_length=1, max_length=20)
     timezone: str | None = Field(default=None, max_length=64)

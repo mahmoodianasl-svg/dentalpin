@@ -49,7 +49,7 @@ from .service import (
     decode_token,
     hash_password,
     refresh_credential_hash,
-    validate_password_strength,
+    validate_staff_password,
     verify_password,
 )
 
@@ -224,7 +224,7 @@ async def setup(
             detail="System already initialized",
         )
 
-    is_valid, error_msg = validate_password_strength(data.admin_password)
+    is_valid, error_msg = validate_staff_password(data.admin_password)
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -549,7 +549,7 @@ async def create_user(
         )
 
     # Validate password strength
-    is_valid, error_msg = validate_password_strength(data.password)
+    is_valid, error_msg = validate_staff_password(data.password)
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

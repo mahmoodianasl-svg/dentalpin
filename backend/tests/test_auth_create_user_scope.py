@@ -15,7 +15,7 @@ from app.core.auth.models import Clinic
 def _payload(clinic_id=None) -> dict:
     body = {
         "email": f"new-{uuid4().hex[:8]}@example.com",
-        "password": "TestPass1234",
+        "password": "New Staff Passphrase 2026",
         "first_name": "New",
         "last_name": "Staff",
         "role": "receptionist",
@@ -33,6 +33,20 @@ async def test_create_user_in_own_clinic_succeeds(
 ) -> None:
     r = await client.post("/api/v1/auth/users", json=_payload(), headers=auth_headers)
     assert r.status_code == 201, r.text
+
+
+@pytest.mark.asyncio
+async def test_create_user_rejects_common_password(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    test_clinic: Clinic,
+) -> None:
+    r = await client.post(
+        "/api/v1/auth/users",
+        json=_payload() | {"password": "films+pic+galeries"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 422
 
 
 @pytest.mark.asyncio

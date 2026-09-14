@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     # convenience, but production deploys must set it explicitly so a
     # leak of one key does not compromise the other.
     BUDGET_PUBLIC_SECRET_KEY: str = ""
+    # Staff MFA uses independent secret-manager values. They remain optional
+    # until the enrollment/challenge rollout is enabled; MFA code must call
+    # load_staff_mfa_key_material() and fail closed before persisting a seed.
+    MFA_ENCRYPTION_KEY_ID: str = ""
+    MFA_ENCRYPTION_KEY: str = ""
+    MFA_RECOVERY_PEPPER: str = ""
 
     # Environment
     ENVIRONMENT: str = "development"
