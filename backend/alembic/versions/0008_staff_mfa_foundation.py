@@ -57,9 +57,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("code_hash"),
     )
-    op.create_index(
-        "ix_staff_mfa_recovery_codes_user_id", "staff_mfa_recovery_codes", ["user_id"]
-    )
+    op.create_index("ix_staff_mfa_recovery_codes_user_id", "staff_mfa_recovery_codes", ["user_id"])
 
 
 def downgrade() -> None:
