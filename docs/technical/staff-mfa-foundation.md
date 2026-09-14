@@ -30,10 +30,3 @@ without a bypass to patient data.
 Do not persist pending TOTP material unless a production encryption key is
 configured. Backups of these tables require the separately stored key for
 restoration. Recovery-code digests must not use the token-signing secret.
-
-## Qualification
-
-This stacked PR temporarily targets `main` to trigger the repository's
-pull-request CI, which is configured for `main` and `develop` rather than
-feature-to-feature PRs. Once exact-head gates pass, restore the PR base to
-the password-policy branch to keep its diff limited to this tranche.
