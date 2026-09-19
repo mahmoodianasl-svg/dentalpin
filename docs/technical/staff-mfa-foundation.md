@@ -1,12 +1,16 @@
 # SEC-004: staff MFA storage foundation
 
-Status: partial implementation — storage, cryptographic primitives, runtime
-secret validation, and pending-challenge construction; enforcement pending.
+Status: partial implementation — storage, cryptographic primitives, and
+password-plus-MFA login for already enrolled staff; enrollment and rollout pending.
 
-This migration adds three staff-only tables and changes no authentication endpoint.
-Password-only login, setup, and refresh still issue their current sessions until
-a later coordinated enforcement change. This PR must remain draft and must not be
-described as completing SEC-004.
+The `0008` migration adds three staff-only tables. The `0009` migration adds a
+verification timestamp to browser refresh sessions. Once a staff account has
+an enrolled factor, password login returns a five-minute challenge without
+issuing access or refresh credentials. `/auth/mfa/complete` accepts a TOTP or
+unused recovery code, consumes the challenge under a row lock, and issues a
+verified browser session. Five failed attempts exhaust a challenge. Existing
+access tokens without MFA proof are rejected, and old refresh sessions are
+revoked on refresh. This PR must remain draft until SEC-004 rollout is complete.
 
 - `staff_mfa_factors` has one row per staff user. `encrypted_secret` must hold
   only an authenticated-encryption envelope, never a raw TOTP seed; `key_id`
@@ -15,20 +19,20 @@ described as completing SEC-004.
   `last_accepted_step` supports one-use TOTP steps under a row lock.
 - `staff_mfa_challenges` stores a digest of an opaque password-verified
   challenge, its purpose, expiry, attempts, and consumption time. A challenge
-  must never be accepted as an API access or refresh credential. Later handlers
-  must lock rows before counting attempts and consuming challenges.
+  must never be accepted as an API access or refresh credential. The login
+  completion handler locks the challenge before counting attempts or consuming it.
 - `staff_mfa_recovery_codes` stores only digests of independently generated,
-  high-entropy, one-use codes. Later handlers must atomically mark use,
-  replace a used code, and notify the account owner.
+  high-entropy, one-use codes. Login completion atomically marks use; issuing a
+  replacement and notifying the account owner remain rollout work.
 
-The migration does not backfill factors or silently enable MFA for existing
-accounts. Before enforcement, implement and test enrollment, an operator
-bootstrap for the first administrator, existing-account migration, factor
-challenge and recovery, key management, revocation, and browser UI as tracked
+The migrations do not backfill factors or silently enable MFA for existing
+accounts. Password-only login still issues full sessions for staff without an
+enrolled factor. Before production enforcement, implement and test enrollment,
+an operator bootstrap for the first administrator, existing-account migration,
+recovery replacement and notification, key management, revocation, and browser UI as tracked
 in [SEC-004 issue #62](https://github.com/mahmoodianasl-svg/dentalpin/issues/62).
-The first enforcement release must not issue full-access sessions from a
-password-only login; establish a controlled path for existing staff to enroll
-without a bypass to patient data.
+The first universal enforcement release must establish a controlled path for
+existing staff to enroll without a bypass to patient data.
 
 Do not persist pending TOTP material unless a production encryption key is
 configured. Backups of these tables require the separately stored key for
@@ -58,9 +62,9 @@ loader validates all three values before use. Empty defaults keep the
 not-yet-enforced foundation bootable but fail closed when an MFA operation
 requests the keys.
 
-The service can construct a five-minute pending-auth row for `login`,
+The service constructs a five-minute pending-auth row for `login`,
 `enrollment`, or `recovery`. It stores only the opaque challenge digest,
 starts with zero attempts, rejects a fifth attempt, and rejects expired or
-consumed rows. Endpoint code must obtain the row with `SELECT ... FOR UPDATE`
-before incrementing attempts or consuming it; these helpers intentionally do
-not pretend an in-memory check is an atomic database transition.
+consumed rows. The login endpoint obtains the row with `SELECT ... FOR UPDATE`
+before incrementing attempts or consuming it. Enrollment and recovery flows
+must apply the same transaction discipline when they are added.

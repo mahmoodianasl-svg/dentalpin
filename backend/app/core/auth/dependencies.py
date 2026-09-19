@@ -1,6 +1,7 @@
 """Authentication dependencies for FastAPI."""
 
 from collections.abc import Callable
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -14,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.core.log_context import set_request_context
 from app.database import get_db
 
-from .models import Clinic, ClinicMembership, User
+from .models import Clinic, ClinicMembership, StaffMfaFactor, User
 from .permissions import has_permission
 from .service import decode_token
 
@@ -71,6 +72,20 @@ async def get_current_user(
     # Check token version for revocation
     if user.token_version != token_version:
         raise credentials_exception
+
+    enrolled_at = await db.scalar(
+        select(StaffMfaFactor.enrolled_at).where(
+            StaffMfaFactor.user_id == user.id,
+            StaffMfaFactor.enrolled_at.is_not(None),
+        )
+    )
+    if enrolled_at is not None:
+        try:
+            verified_at = datetime.fromisoformat(payload["mfa_verified_at"])
+            if verified_at.tzinfo is None or verified_at < enrolled_at:
+                raise credentials_exception
+        except (KeyError, TypeError, ValueError):
+            raise credentials_exception from None
 
     return user
 

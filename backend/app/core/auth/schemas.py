@@ -35,6 +35,19 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class PendingMfaResponse(BaseModel):
+    """A password-verified challenge; this does not grant API access."""
+
+    mfa_required: bool = True
+    challenge: str
+    expires_in: int = 300
+
+
+class CompleteMfaRequest(BaseModel):
+    challenge: str = Field(min_length=1, max_length=256)
+    code: str = Field(min_length=1, max_length=64)
+
+
 class UserResponse(BaseModel):
     """Schema for user response."""
 

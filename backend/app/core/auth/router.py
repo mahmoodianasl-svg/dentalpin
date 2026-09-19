@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID, uuid4
 
+from cryptography.exceptions import InvalidTag
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError
@@ -20,7 +21,24 @@ from app.core.schemas import ApiResponse, PaginatedApiResponse
 from app.database import get_db
 
 from .dependencies import ClinicContext, get_clinic_context, get_current_user, require_permission
-from .models import Clinic, ClinicMembership, RefreshSession, User
+from .mfa import (
+    decrypt_totp_secret,
+    hash_pending_challenge,
+    hash_recovery_code,
+    issue_pending_challenge,
+    load_staff_mfa_key_material,
+    pending_challenge_is_usable,
+    verify_totp,
+)
+from .models import (
+    Clinic,
+    ClinicMembership,
+    RefreshSession,
+    StaffMfaChallenge,
+    StaffMfaFactor,
+    StaffMfaRecoveryCode,
+    User,
+)
 from .permissions import (
     CORE_PERMISSIONS,
     PROFESSIONAL_ROLES,
@@ -33,7 +51,9 @@ from .schemas import (
     ClinicMetadataResponse,
     ClinicMetadataUpdate,
     ClinicResponse,
+    CompleteMfaRequest,
     MeResponse,
+    PendingMfaResponse,
     ProfessionalResponse,
     SetupStatusResponse,
     SystemSetup,
@@ -104,12 +124,15 @@ def _set_session_cookies(
     return csrf_token
 
 
-async def _create_browser_session(db: AsyncSession, user: User) -> str:
+async def _create_browser_session(
+    db: AsyncSession, user: User, *, mfa_verified_at: datetime | None = None
+) -> str:
     """Persist the credential before exposing it to the browser."""
     now = datetime.now(UTC)
     session = RefreshSession(
         user_id=user.id,
         created_at=now,
+        mfa_verified_at=mfa_verified_at,
         absolute_expires_at=now + timedelta(days=settings.REFRESH_SESSION_ABSOLUTE_DAYS),
     )
     session.id = uuid4()
@@ -261,14 +284,14 @@ async def setup(
     return TokenResponse(access_token=access_token)
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse | PendingMfaResponse)
 @limiter.limit("5/minute")
 async def login(
     request: Request,
     response: Response,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> TokenResponse:
+) -> TokenResponse | PendingMfaResponse:
     """Login and get access tokens."""
     # Find user by email
     result = await db.execute(
@@ -289,6 +312,21 @@ async def login(
             detail="User account is inactive",
         )
 
+    enrolled = await db.scalar(
+        select(StaffMfaFactor.id).where(
+            StaffMfaFactor.user_id == user.id,
+            StaffMfaFactor.enrolled_at.is_not(None),
+        )
+    )
+    if enrolled is not None:
+        challenge, record = issue_pending_challenge(
+            user_id=user.id, purpose="login", now=datetime.now(UTC)
+        )
+        db.add(record)
+        await db.commit()
+        response.headers["Cache-Control"] = "no-store"
+        return PendingMfaResponse(challenge=challenge)
+
     # Get first clinic ID if user has any membership
     clinic_id = None
     if user.memberships:
@@ -302,6 +340,94 @@ async def login(
     )
     refresh_token = await _create_browser_session(db, user)
 
+    _set_session_cookies(response, refresh_token)
+    return TokenResponse(access_token=access_token)
+
+
+@router.post("/mfa/complete", response_model=TokenResponse)
+@limiter.limit("5/minute")
+async def complete_mfa_login(
+    request: Request,
+    response: Response,
+    data: CompleteMfaRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TokenResponse:
+    """Consume a password-verified login challenge and a TOTP or recovery code."""
+    invalid = HTTPException(status_code=401, detail="Invalid or expired MFA challenge or code")
+    record = await db.scalar(
+        select(StaffMfaChallenge)
+        .where(StaffMfaChallenge.challenge_hash == hash_pending_challenge(data.challenge))
+        .with_for_update()
+    )
+    now = datetime.now(UTC)
+    if (
+        record is None
+        or record.purpose != "login"
+        or not pending_challenge_is_usable(record, data.challenge, now=now)
+    ):
+        raise invalid
+
+    factor = await db.scalar(
+        select(StaffMfaFactor).where(StaffMfaFactor.user_id == record.user_id).with_for_update()
+    )
+    user = await db.scalar(
+        select(User).options(selectinload(User.memberships)).where(User.id == record.user_id)
+    )
+    if factor is None or factor.enrolled_at is None or user is None or not user.is_active:
+        raise invalid
+
+    try:
+        keys = load_staff_mfa_key_material(
+            key_id=settings.MFA_ENCRYPTION_KEY_ID,
+            encoded_encryption_key=settings.MFA_ENCRYPTION_KEY,
+            encoded_recovery_pepper=settings.MFA_RECOVERY_PEPPER,
+        )
+        if keys.key_id != factor.key_id:
+            raise ValueError("MFA encryption key id mismatch")
+        secret = decrypt_totp_secret(
+            factor.encrypted_secret,
+            user_id=user.id,
+            key_id=factor.key_id,
+            encoded_key=keys.encoded_encryption_key,
+        )
+    except (InvalidTag, UnicodeError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="Staff MFA is unavailable") from exc
+
+    step = verify_totp(secret, data.code, at=now, last_accepted_step=factor.last_accepted_step)
+    used_recovery = None
+    if step is None:
+        try:
+            digest = hash_recovery_code(data.code, pepper=keys.recovery_pepper)
+        except ValueError:
+            digest = None
+        if digest is not None:
+            used_recovery = await db.scalar(
+                select(StaffMfaRecoveryCode)
+                .where(
+                    StaffMfaRecoveryCode.user_id == user.id,
+                    StaffMfaRecoveryCode.code_hash == digest,
+                    StaffMfaRecoveryCode.used_at.is_(None),
+                )
+                .with_for_update()
+            )
+    if step is None and used_recovery is None:
+        record.attempts += 1
+        await db.commit()
+        raise invalid
+
+    if step is not None:
+        factor.last_accepted_step = step
+    else:
+        used_recovery.used_at = now
+    record.consumed_at = now
+    # Persist one-use state before any credential leaves the process.
+    await db.commit()
+
+    clinic_id = user.memberships[0].clinic_id if user.memberships else None
+    access_token = create_access_token(
+        user.id, clinic_id=clinic_id, token_version=user.token_version, mfa_verified_at=now
+    )
+    refresh_token = await _create_browser_session(db, user, mfa_verified_at=now)
     _set_session_cookies(response, refresh_token)
     return TokenResponse(access_token=access_token)
 
@@ -378,6 +504,16 @@ async def refresh_token(
             detail="Token has been revoked",
         )
 
+    enrolled_at = await db.scalar(
+        select(StaffMfaFactor.enrolled_at).where(StaffMfaFactor.user_id == user.id)
+    )
+    if enrolled_at is not None and (
+        session.mfa_verified_at is None or session.mfa_verified_at < enrolled_at
+    ):
+        session.revoked_at = now
+        await db.commit()
+        raise HTTPException(status_code=401, detail="MFA verification required")
+
     # Fetch memberships with clinics for response
     memberships_result = await db.execute(
         select(ClinicMembership)
@@ -405,6 +541,7 @@ async def refresh_token(
         user.id,
         clinic_id=clinic_id,
         token_version=user.token_version,
+        mfa_verified_at=session.mfa_verified_at if enrolled_at is not None else None,
     )
     new_refresh_token = create_refresh_token(
         user.id,

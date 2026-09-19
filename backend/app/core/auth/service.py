@@ -66,6 +66,8 @@ def create_access_token(
     user_id: UUID,
     clinic_id: UUID | None = None,
     token_version: int = 0,
+    *,
+    mfa_verified_at: datetime | None = None,
 ) -> str:
     """Create a JWT access token."""
     expire = datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -75,6 +77,8 @@ def create_access_token(
         "type": "access",
         "token_version": token_version,
     }
+    if mfa_verified_at is not None:
+        payload["mfa_verified_at"] = mfa_verified_at.isoformat()
     if clinic_id:
         payload["clinic_id"] = str(clinic_id)
 
