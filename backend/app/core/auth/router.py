@@ -3,6 +3,7 @@
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
+from urllib.parse import quote
 from uuid import UUID, uuid4
 
 from cryptography.exceptions import InvalidTag
@@ -11,7 +12,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -23,6 +24,9 @@ from app.database import get_db
 from .dependencies import ClinicContext, get_clinic_context, get_current_user, require_permission
 from .mfa import (
     decrypt_totp_secret,
+    encrypt_totp_secret,
+    generate_recovery_codes,
+    generate_totp_secret,
     hash_pending_challenge,
     hash_recovery_code,
     issue_pending_challenge,
@@ -48,10 +52,14 @@ from .permissions import (
 )
 from .schemas import (
     AuthResponse,
+    BeginMfaEnrollmentRequest,
+    BeginMfaEnrollmentResponse,
     ClinicMetadataResponse,
     ClinicMetadataUpdate,
     ClinicResponse,
     CompleteMfaRequest,
+    ConfirmMfaEnrollmentRequest,
+    ConfirmMfaEnrollmentResponse,
     MeResponse,
     PendingMfaResponse,
     ProfessionalResponse,
@@ -208,6 +216,19 @@ async def _refresh_rate_key(request: Request) -> str:
             if sub:
                 return f"refresh:{sub}"
     except Exception:
+        pass
+    return get_remote_address(request)
+
+
+def _mfa_enrollment_rate_key(request: Request) -> str:
+    """Give authenticated staff separate rate buckets behind a shared proxy."""
+    try:
+        scheme, token = request.headers.get("Authorization", "").split(" ", 1)
+        if scheme.lower() == "bearer":
+            payload = decode_token(token)
+            if payload.get("type") == "access" and payload.get("sub"):
+                return f"mfa-enrollment:{payload['sub']}"
+    except (JWTError, ValueError):
         pass
     return get_remote_address(request)
 
@@ -430,6 +451,168 @@ async def complete_mfa_login(
     refresh_token = await _create_browser_session(db, user, mfa_verified_at=now)
     _set_session_cookies(response, refresh_token)
     return TokenResponse(access_token=access_token)
+
+
+@router.post("/mfa/enroll/start", response_model=BeginMfaEnrollmentResponse)
+@limiter.limit("5/minute", key_func=_mfa_enrollment_rate_key)
+async def begin_mfa_enrollment(
+    request: Request,
+    response: Response,
+    data: BeginMfaEnrollmentRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> BeginMfaEnrollmentResponse:
+    """Require the current password before exposing a new authenticator seed."""
+    try:
+        keys = load_staff_mfa_key_material(
+            key_id=settings.MFA_ENCRYPTION_KEY_ID,
+            encoded_encryption_key=settings.MFA_ENCRYPTION_KEY,
+            encoded_recovery_pepper=settings.MFA_RECOVERY_PEPPER,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail="Staff MFA is unavailable") from exc
+
+    # The user lock serializes simultaneous starts even before a factor row exists.
+    user = await db.scalar(select(User).where(User.id == current_user.id).with_for_update())
+    if user is None or not user.is_active or not verify_password(data.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    factor = await db.scalar(
+        select(StaffMfaFactor).where(StaffMfaFactor.user_id == user.id).with_for_update()
+    )
+    if factor is not None and factor.enrolled_at is not None:
+        raise HTTPException(status_code=409, detail="MFA is already enrolled")
+
+    now = datetime.now(UTC)
+    secret = generate_totp_secret()
+    envelope = encrypt_totp_secret(
+        secret, user_id=user.id, key_id=keys.key_id, encoded_key=keys.encoded_encryption_key
+    )
+    if factor is None:
+        factor = StaffMfaFactor(
+            user_id=user.id, created_at=now, encrypted_secret=envelope, key_id=keys.key_id
+        )
+        db.add(factor)
+    else:
+        factor.encrypted_secret = envelope
+        factor.key_id = keys.key_id
+        factor.last_accepted_step = None
+    factor.pending_expires_at = now + timedelta(minutes=10)
+
+    # A restarted setup invalidates all earlier pending enrollment challenges.
+    await db.execute(
+        update(StaffMfaChallenge)
+        .where(
+            StaffMfaChallenge.user_id == user.id,
+            StaffMfaChallenge.purpose == "enrollment",
+            StaffMfaChallenge.consumed_at.is_(None),
+        )
+        .values(consumed_at=now)
+    )
+    challenge, record = issue_pending_challenge(user_id=user.id, purpose="enrollment", now=now)
+    db.add(record)
+    await db.commit()
+    response.headers["Cache-Control"] = "no-store"
+    issuer = "DentalPin"
+    uri = (
+        f"otpauth://totp/{quote(issuer)}:{quote(user.email, safe='')}"
+        f"?secret={secret}&issuer={quote(issuer)}&algorithm=SHA1&digits=6&period=30"
+    )
+    return BeginMfaEnrollmentResponse(challenge=challenge, secret=secret, provisioning_uri=uri)
+
+
+@router.post("/mfa/enroll/confirm", response_model=ConfirmMfaEnrollmentResponse)
+@limiter.limit("5/minute", key_func=_mfa_enrollment_rate_key)
+async def confirm_mfa_enrollment(
+    request: Request,
+    response: Response,
+    data: ConfirmMfaEnrollmentRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ConfirmMfaEnrollmentResponse:
+    """Confirm the pending seed, revoke old sessions, and reveal recovery codes once."""
+    invalid = HTTPException(status_code=401, detail="Invalid or expired MFA enrollment")
+    record = await db.scalar(
+        select(StaffMfaChallenge)
+        .where(StaffMfaChallenge.challenge_hash == hash_pending_challenge(data.challenge))
+        .with_for_update()
+    )
+    now = datetime.now(UTC)
+    if (
+        record is None
+        or record.user_id != current_user.id
+        or record.purpose != "enrollment"
+        or not pending_challenge_is_usable(record, data.challenge, now=now)
+    ):
+        raise invalid
+
+    user = await db.scalar(
+        select(User)
+        .options(selectinload(User.memberships))
+        .where(User.id == current_user.id)
+        .with_for_update()
+    )
+    factor = await db.scalar(
+        select(StaffMfaFactor).where(StaffMfaFactor.user_id == current_user.id).with_for_update()
+    )
+    if (
+        user is None
+        or not user.is_active
+        or factor is None
+        or factor.enrolled_at is not None
+        or factor.pending_expires_at is None
+        or factor.pending_expires_at <= now
+    ):
+        raise invalid
+    try:
+        keys = load_staff_mfa_key_material(
+            key_id=settings.MFA_ENCRYPTION_KEY_ID,
+            encoded_encryption_key=settings.MFA_ENCRYPTION_KEY,
+            encoded_recovery_pepper=settings.MFA_RECOVERY_PEPPER,
+        )
+        if keys.key_id != factor.key_id:
+            raise ValueError("MFA encryption key id mismatch")
+        secret = decrypt_totp_secret(
+            factor.encrypted_secret,
+            user_id=user.id,
+            key_id=factor.key_id,
+            encoded_key=keys.encoded_encryption_key,
+        )
+    except (InvalidTag, UnicodeError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="Staff MFA is unavailable") from exc
+    step = verify_totp(secret, data.code, at=now)
+    if step is None:
+        record.attempts += 1
+        await db.commit()
+        raise invalid
+
+    factor.last_accepted_step = step
+    factor.enrolled_at = now
+    factor.pending_expires_at = None
+    record.consumed_at = now
+    recovery_codes = generate_recovery_codes()
+    db.add_all(
+        StaffMfaRecoveryCode(
+            user_id=user.id,
+            code_hash=hash_recovery_code(code, pepper=keys.recovery_pepper),
+            created_at=now,
+        )
+        for code in recovery_codes
+    )
+    user.token_version += 1
+    await db.execute(
+        update(RefreshSession)
+        .where(RefreshSession.user_id == user.id, RefreshSession.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+    # The session helper commits enrollment, recovery digests, and the new session
+    # as one transaction before either credentials or recovery codes are returned.
+    refresh_token = await _create_browser_session(db, user, mfa_verified_at=now)
+    clinic_id = user.memberships[0].clinic_id if user.memberships else None
+    access_token = create_access_token(
+        user.id, clinic_id=clinic_id, token_version=user.token_version, mfa_verified_at=now
+    )
+    _set_session_cookies(response, refresh_token)
+    return ConfirmMfaEnrollmentResponse(access_token=access_token, recovery_codes=recovery_codes)
 
 
 @router.post("/refresh", response_model=AuthResponse)

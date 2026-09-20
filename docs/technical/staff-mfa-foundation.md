@@ -1,7 +1,7 @@
 # SEC-004: staff MFA storage foundation
 
-Status: partial implementation — storage, cryptographic primitives, and
-password-plus-MFA login for already enrolled staff; enrollment and rollout pending.
+Status: partial implementation — storage, cryptographic primitives, staff
+enrollment endpoints, and password-plus-MFA login; universal rollout pending.
 
 The `0008` migration adds three staff-only tables. The `0009` migration adds a
 verification timestamp to browser refresh sessions. Once a staff account has
@@ -11,6 +11,16 @@ unused recovery code, consumes the challenge under a row lock, and issues a
 verified browser session. Five failed attempts exhaust a challenge. Existing
 access tokens without MFA proof are rejected, and old refresh sessions are
 revoked on refresh. This PR must remain draft until SEC-004 rollout is complete.
+
+Authenticated staff can start enrollment at `/auth/mfa/enroll/start` with a
+fresh password recheck. It returns a five-minute challenge and authenticator
+setup URI, stores the seed only as an encrypted envelope, and expires pending
+setup after ten minutes. Restarting setup invalidates prior challenges.
+`/auth/mfa/enroll/confirm` validates the pending TOTP step under row locks,
+marks the factor enrolled, revokes older browser sessions and access tokens,
+and creates a verified browser session. The ten recovery codes are shown only
+in this response; only keyed digests are persisted. The client must show the
+codes once and tell the user to store them safely before leaving the screen.
 
 - `staff_mfa_factors` has one row per staff user. `encrypted_secret` must hold
   only an authenticated-encryption envelope, never a raw TOTP seed; `key_id`
@@ -27,9 +37,9 @@ revoked on refresh. This PR must remain draft until SEC-004 rollout is complete.
 
 The migrations do not backfill factors or silently enable MFA for existing
 accounts. Password-only login still issues full sessions for staff without an
-enrolled factor. Before production enforcement, implement and test enrollment,
-an operator bootstrap for the first administrator, existing-account migration,
-recovery replacement and notification, key management, revocation, and browser UI as tracked
+enrolled factor. Before production enforcement, finish the operator bootstrap
+for the first administrator, existing-account migration, recovery replacement
+and notification, key management, audit, and browser UI as tracked
 in [SEC-004 issue #62](https://github.com/mahmoodianasl-svg/dentalpin/issues/62).
 The first universal enforcement release must establish a controlled path for
 existing staff to enroll without a bypass to patient data.
@@ -65,6 +75,6 @@ requests the keys.
 The service constructs a five-minute pending-auth row for `login`,
 `enrollment`, or `recovery`. It stores only the opaque challenge digest,
 starts with zero attempts, rejects a fifth attempt, and rejects expired or
-consumed rows. The login endpoint obtains the row with `SELECT ... FOR UPDATE`
-before incrementing attempts or consuming it. Enrollment and recovery flows
-must apply the same transaction discipline when they are added.
+consumed rows. The login and enrollment endpoints obtain the row with
+`SELECT ... FOR UPDATE` before incrementing attempts or consuming it. A
+factor-recovery flow must apply the same transaction discipline when added.

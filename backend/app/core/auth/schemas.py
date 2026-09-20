@@ -48,6 +48,30 @@ class CompleteMfaRequest(BaseModel):
     code: str = Field(min_length=1, max_length=64)
 
 
+class BeginMfaEnrollmentRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=1024)
+
+
+class BeginMfaEnrollmentResponse(BaseModel):
+    """One-time authenticator setup material; callers must not store this response."""
+
+    challenge: str
+    secret: str
+    provisioning_uri: str
+    expires_in: int = 300
+
+
+class ConfirmMfaEnrollmentRequest(BaseModel):
+    challenge: str = Field(min_length=1, max_length=256)
+    code: str = Field(min_length=6, max_length=6)
+
+
+class ConfirmMfaEnrollmentResponse(TokenResponse):
+    """One-time recovery-code display and a newly verified browser session."""
+
+    recovery_codes: list[str]
+
+
 class UserResponse(BaseModel):
     """Schema for user response."""
 
