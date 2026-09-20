@@ -10,6 +10,10 @@ const toast = useToast()
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const isLoading = ref(false)
+// Keep the pending challenge in this page instance only; never place it in a
+// URL, cookie, Nuxt SSR state, or persistent browser storage.
+const pendingChallenge = ref<string | null>(null)
+const mfaCode = ref('')
 const formState = reactive({
   email: '',
   password: ''
@@ -72,10 +76,16 @@ async function onSubmit() {
 
   isLoading.value = true
   try {
-    await auth.login({
+    const pending = await auth.login({
       email: formState.email.trim(),
       password: formState.password
     })
+
+    if (pending) {
+      pendingChallenge.value = pending.challenge
+      formState.password = ''
+      return
+    }
 
     toast.add({
       title: t('auth.loginSuccess'),
@@ -84,11 +94,35 @@ async function onSubmit() {
 
     await navigateTo('/')
   } catch (error: unknown) {
-    console.error('Login error:', error)
     errorMessage.value = mapError(error)
   } finally {
     isLoading.value = false
   }
+}
+
+async function onMfaSubmit() {
+  if (!pendingChallenge.value || !mfaCode.value.trim()) return
+  errorMessage.value = ''
+  isLoading.value = true
+  try {
+    await auth.completeMfa(pendingChallenge.value, mfaCode.value.trim())
+    pendingChallenge.value = null
+    mfaCode.value = ''
+    toast.add({ title: t('auth.loginSuccess'), color: 'success' })
+    await navigateTo('/')
+  } catch (error: unknown) {
+    const status = (error as { statusCode?: number }).statusCode
+    errorMessage.value = status === 401 ? t('auth.mfaInvalid') : mapError(error)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+function restartLogin() {
+  pendingChallenge.value = null
+  mfaCode.value = ''
+  formState.password = ''
+  errorMessage.value = ''
 }
 
 watch(() => formState.email, () => {
@@ -121,26 +155,27 @@ watch(() => formState.password, () => {
     </div>
 
     <UCard>
+      <!-- Error message — pastel danger (DESIGN §2.4) -->
+      <div
+        v-if="errorMessage"
+        class="alert-surface-danger rounded-token-md px-3 py-2 flex items-start gap-2 mb-4"
+        role="alert"
+      >
+        <UIcon
+          name="i-lucide-alert-circle"
+          class="w-4 h-4 mt-0.5 shrink-0"
+          :style="{ color: 'var(--color-danger-accent)' }"
+        />
+        <span class="text-body">
+          {{ errorMessage }}
+        </span>
+      </div>
+
       <form
+        v-if="!pendingChallenge"
         class="space-y-4"
         @submit.prevent="onSubmit"
       >
-        <!-- Error message — pastel danger (DESIGN §2.4) -->
-        <div
-          v-if="errorMessage"
-          class="alert-surface-danger rounded-token-md px-3 py-2 flex items-start gap-2"
-          role="alert"
-        >
-          <UIcon
-            name="i-lucide-alert-circle"
-            class="w-4 h-4 mt-0.5 shrink-0"
-            :style="{ color: 'var(--color-danger-accent)' }"
-          />
-          <span class="text-body">
-            {{ errorMessage }}
-          </span>
-        </div>
-
         <UFormField
           :label="t('auth.email')"
           name="email"
@@ -184,9 +219,53 @@ watch(() => formState.password, () => {
           {{ t('auth.loginButton') }}
         </UButton>
       </form>
+
+      <form
+        v-else
+        class="space-y-4"
+        @submit.prevent="onMfaSubmit"
+      >
+        <h2 class="text-lg font-semibold text-default">
+          {{ t('auth.mfaTitle') }}
+        </h2>
+        <p class="text-caption text-muted">
+          {{ t('auth.mfaHint') }}
+        </p>
+        <UFormField
+          :label="t('auth.mfaCode')"
+          name="mfaCode"
+        >
+          <UInput
+            v-model="mfaCode"
+            class="w-full"
+            autocomplete="one-time-code"
+            inputmode="text"
+            :disabled="isLoading"
+          />
+        </UFormField>
+        <UButton
+          type="submit"
+          color="primary"
+          variant="soft"
+          block
+          :loading="isLoading"
+          :disabled="isLoading || !mfaCode.trim()"
+        >
+          {{ t('auth.mfaVerify') }}
+        </UButton>
+        <UButton
+          type="button"
+          variant="ghost"
+          block
+          :disabled="isLoading"
+          @click="restartLogin"
+        >
+          {{ t('auth.mfaRestart') }}
+        </UButton>
+      </form>
     </UCard>
 
-    <DemoCredentialsHint />
+    <DemoCredentialsHint v-if="!pendingChallenge" />
 
     <p class="text-center text-caption text-subtle mt-6">
       &copy; {{ new Date().getFullYear() }} DentalPin

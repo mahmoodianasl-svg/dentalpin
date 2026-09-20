@@ -64,6 +64,7 @@ from .schemas import (
     PendingMfaResponse,
     ProfessionalResponse,
     SetupStatusResponse,
+    StaffMfaStatusResponse,
     SystemSetup,
     TokenResponse,
     UserCreate,
@@ -613,6 +614,34 @@ async def confirm_mfa_enrollment(
     )
     _set_session_cookies(response, refresh_token)
     return ConfirmMfaEnrollmentResponse(access_token=access_token, recovery_codes=recovery_codes)
+
+
+@router.get("/mfa/status", response_model=StaffMfaStatusResponse)
+async def staff_mfa_status(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> StaffMfaStatusResponse:
+    """Expose enrollment state without disclosing seeds or recovery secrets."""
+    enrolled = await db.scalar(
+        select(StaffMfaFactor.id).where(
+            StaffMfaFactor.user_id == current_user.id,
+            StaffMfaFactor.enrolled_at.is_not(None),
+        )
+    )
+    remaining = 0
+    if enrolled is not None:
+        remaining = (
+            await db.scalar(
+                select(func.count())
+                .select_from(StaffMfaRecoveryCode)
+                .where(
+                    StaffMfaRecoveryCode.user_id == current_user.id,
+                    StaffMfaRecoveryCode.used_at.is_(None),
+                )
+            )
+            or 0
+        )
+    return StaffMfaStatusResponse(enrolled=enrolled is not None, recovery_codes_remaining=remaining)
 
 
 @router.post("/refresh", response_model=AuthResponse)

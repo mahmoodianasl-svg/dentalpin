@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('useAuth composable', () => {
   describe('initialization', () => {
@@ -61,6 +63,41 @@ describe('useAuth composable', () => {
       const auth = useAuth()
 
       expect(auth.user.value).toBe(null)
+    })
+  })
+
+  describe('MFA login and enrollment', () => {
+    it('keeps a pending password challenge out of authenticated state', async () => {
+      const request = vi.fn().mockResolvedValue({ mfa_required: true, challenge: 'pending-secret' })
+      vi.stubGlobal('$fetch', request)
+      const { useAuth } = await import('~/composables/useAuth')
+      const auth = useAuth()
+
+      expect(await auth.login({ email: 'staff@example.test', password: 'password' }))
+        .toEqual({ mfa_required: true, challenge: 'pending-secret' })
+      expect(auth.accessToken.value).toBeNull()
+      expect(auth.isAuthenticated.value).toBe(false)
+      expect(request).toHaveBeenCalledTimes(1)
+    })
+
+    it('returns one-time recovery codes even if the profile fetch fails', async () => {
+      const request = vi.fn()
+        .mockResolvedValueOnce({ access_token: 'password-session' })
+        .mockResolvedValueOnce({ data: { user: { id: 'staff' }, permissions: [] } })
+        .mockResolvedValueOnce({ access_token: 'verified-session', recovery_codes: ['save-me'] })
+        .mockRejectedValueOnce(new Error('Profile temporarily unavailable'))
+      vi.stubGlobal('$fetch', request)
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      try {
+        const { useAuth } = await import('~/composables/useAuth')
+        const auth = useAuth()
+        await auth.login({ email: 'staff@example.test', password: 'password' })
+
+        expect(await auth.confirmMfaEnrollment('challenge', '123456')).toEqual(['save-me'])
+        expect(auth.accessToken.value).toBe('verified-session')
+      } finally {
+        log.mockRestore()
+      }
     })
   })
 })

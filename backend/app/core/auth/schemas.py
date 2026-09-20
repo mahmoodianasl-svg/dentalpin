@@ -72,6 +72,11 @@ class ConfirmMfaEnrollmentResponse(TokenResponse):
     recovery_codes: list[str]
 
 
+class StaffMfaStatusResponse(BaseModel):
+    enrolled: bool
+    recovery_codes_remaining: int
+
+
 class UserResponse(BaseModel):
     """Schema for user response."""
 

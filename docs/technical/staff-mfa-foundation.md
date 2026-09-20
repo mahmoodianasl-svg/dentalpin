@@ -19,8 +19,12 @@ setup after ten minutes. Restarting setup invalidates prior challenges.
 `/auth/mfa/enroll/confirm` validates the pending TOTP step under row locks,
 marks the factor enrolled, revokes older browser sessions and access tokens,
 and creates a verified browser session. The ten recovery codes are shown only
-in this response; only keyed digests are persisted. The client must show the
-codes once and tell the user to store them safely before leaving the screen.
+in this response; only keyed digests are persisted. The profile screen shows
+them once and asks the user to store them safely before leaving the screen.
+The browser login screen accepts an authenticator code or an unused recovery
+code after password verification. The pending challenge stays in page memory.
+`/auth/mfa/status` returns enrollment state and the number of unused recovery
+codes for the authenticated staff profile screen.
 
 - `staff_mfa_factors` has one row per staff user. `encrypted_secret` must hold
   only an authenticated-encryption envelope, never a raw TOTP seed; `key_id`
@@ -39,7 +43,7 @@ The migrations do not backfill factors or silently enable MFA for existing
 accounts. Password-only login still issues full sessions for staff without an
 enrolled factor. Before production enforcement, finish the operator bootstrap
 for the first administrator, existing-account migration, recovery replacement
-and notification, key management, audit, and browser UI as tracked
+and notification, key management, and audit as tracked
 in [SEC-004 issue #62](https://github.com/mahmoodianasl-svg/dentalpin/issues/62).
 The first universal enforcement release must establish a controlled path for
 existing staff to enroll without a bypass to patient data.

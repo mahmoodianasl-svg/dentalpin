@@ -89,6 +89,28 @@ export interface AccessTokenResponse {
   token_type: string
 }
 
+export interface PendingMfaResponse {
+  mfa_required: true
+  challenge: string
+  expires_in: number
+}
+
+export interface MfaEnrollmentStartResponse {
+  challenge: string
+  secret: string
+  provisioning_uri: string
+  expires_in: number
+}
+
+export interface MfaEnrollmentConfirmResponse extends AccessTokenResponse {
+  recovery_codes: string[]
+}
+
+export interface MfaStatusResponse {
+  enrolled: boolean
+  recovery_codes_remaining: number
+}
+
 export interface AuthResponse extends AccessTokenResponse {
   user: User
   clinics: Array<{ id: string, name: string, role: string }>

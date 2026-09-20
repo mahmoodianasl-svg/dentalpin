@@ -56,6 +56,9 @@ async def test_enrollment_revokes_old_sessions_and_returns_recovery_codes_once(
     client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     headers = await setup(client, monkeypatch)
+    initial_status = await client.get(f"{PATH}/mfa/status", headers=headers)
+    assert initial_status.status_code == 200
+    assert initial_status.json() == {"enrolled": False, "recovery_codes_remaining": 0}
     old_refresh = client.cookies.get("dentalpin_refresh")
     old_csrf = client.cookies.get("dentalpin_csrf")
     assert old_refresh and old_csrf
@@ -94,6 +97,8 @@ async def test_enrollment_revokes_old_sessions_and_returns_recovery_codes_once(
     assert old_token.status_code == 401
     fresh_headers = {"Authorization": f"Bearer {confirmed.json()['access_token']}"}
     assert (await client.get(f"{PATH}/me", headers=fresh_headers)).status_code == 200
+    status_response = await client.get(f"{PATH}/mfa/status", headers=fresh_headers)
+    assert status_response.json() == {"enrolled": True, "recovery_codes_remaining": 10}
     client.cookies.set("dentalpin_refresh", old_refresh)
     client.cookies.set("dentalpin_csrf", old_csrf)
     assert (
