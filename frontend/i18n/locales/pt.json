@@ -58,6 +58,8 @@
     "mfaLoading": "Carregando status da verificação…",
     "mfaSaveCodes": "Guarde seus códigos de recuperação",
     "mfaSaveCodesHint": "Esses códigos aparecem uma única vez. Guarde-os em segurança; cada código só pode ser usado uma vez.",
+    "mfaReplacementTitle": "Guarde o novo código de recuperação",
+    "mfaReplacementHint": "O código usado foi substituído. Este novo código aparece uma única vez; guarde-o antes de continuar.",
     "mfaSavedCodes": "Guardei meus códigos",
     "mfaEnabled": "A verificação em duas etapas está ativada.",
     "mfaCodesRemaining": "Códigos de recuperação restantes: {count}",

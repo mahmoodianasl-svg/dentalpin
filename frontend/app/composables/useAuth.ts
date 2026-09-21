@@ -3,6 +3,7 @@ import type {
   LoginCredentials,
   AccessTokenResponse,
   PendingMfaResponse,
+  MfaCompletionResponse,
   MfaEnrollmentStartResponse,
   MfaEnrollmentConfirmResponse,
   MfaRecoveryRotationResponse,
@@ -76,14 +77,22 @@ export function useAuth() {
     return null
   }
 
-  async function completeMfa(challenge: string, code: string): Promise<void> {
-    const response = await $fetch<AccessTokenResponse>('/api/v1/auth/mfa/complete', {
+  async function completeMfa(challenge: string, code: string): Promise<string | null> {
+    const response = await $fetch<MfaCompletionResponse>('/api/v1/auth/mfa/complete', {
       baseURL: apiBaseUrl.value,
       method: 'POST',
       body: { challenge, code },
       credentials: 'include'
     })
-    await acceptAccessToken(response.access_token)
+    accessToken.value = response.access_token
+    if (import.meta.client) refreshCookie('dentalpin_csrf')
+    // The one-time code must reach the page even if /me temporarily fails.
+    try {
+      await fetchUser()
+    } catch {
+      // The verified session can retry profile loading after navigation.
+    }
+    return response.replacement_recovery_code ?? null
   }
 
   async function beginMfaEnrollment(password: string): Promise<MfaEnrollmentStartResponse> {

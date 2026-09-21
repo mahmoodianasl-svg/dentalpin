@@ -58,6 +58,8 @@
     "mfaLoading": "Loading verification status…",
     "mfaSaveCodes": "Save your recovery codes",
     "mfaSaveCodesHint": "These codes are shown once. Store them safely; each code works only once.",
+    "mfaReplacementTitle": "Save your replacement recovery code",
+    "mfaReplacementHint": "Your used recovery code was replaced. This new code is shown once; store it safely before continuing.",
     "mfaSavedCodes": "I saved my codes",
     "mfaEnabled": "Two-step verification is enabled.",
     "mfaCodesRemaining": "Recovery codes remaining: {count}",

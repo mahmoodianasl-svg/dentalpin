@@ -110,6 +110,7 @@ async def test_enrolled_account_requires_mfa_on_access_refresh_and_login(
     )
     assert completed.status_code == 200
     assert completed.json()["token_type"] == "bearer"
+    assert completed.json()["replacement_recovery_code"] is None
     assert client.cookies.get("dentalpin_refresh")
     me = await client.get(
         f"{PATH}/me", headers={"Authorization": f"Bearer {completed.json()['access_token']}"}
@@ -225,9 +226,20 @@ async def test_recovery_code_is_consumed_once(
         f"{PATH}/mfa/complete", json={"challenge": await challenge(client), "code": code}
     )
     assert first.status_code == 200
+    assert first.headers["cache-control"] == "no-store"
+    replacement = first.json()["replacement_recovery_code"]
+    assert replacement and replacement != code
     second = await client.post(
         f"{PATH}/mfa/complete", json={"challenge": await challenge(client), "code": code}
     )
     assert second.status_code == 401
+    assert (
+        await client.post(
+            f"{PATH}/mfa/complete",
+            json={"challenge": await challenge(client), "code": replacement},
+        )
+    ).status_code == 200
+    rows = (await db_session.scalars(select(StaffMfaRecoveryCode))).all()
+    assert len(rows) == 3 and sum(row.used_at is None for row in rows) == 1
     sessions = (await db_session.scalars(select(RefreshSession))).all()
-    assert len([session for session in sessions if session.mfa_verified_at is not None]) == 1
+    assert len([session for session in sessions if session.mfa_verified_at is not None]) == 2

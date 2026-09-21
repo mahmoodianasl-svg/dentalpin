@@ -61,6 +61,7 @@ from .schemas import (
     ClinicMetadataUpdate,
     ClinicResponse,
     CompleteMfaRequest,
+    CompleteMfaResponse,
     ConfirmMfaEnrollmentRequest,
     ConfirmMfaEnrollmentResponse,
     MeResponse,
@@ -392,14 +393,14 @@ async def login(
     return TokenResponse(access_token=access_token)
 
 
-@router.post("/mfa/complete", response_model=TokenResponse)
+@router.post("/mfa/complete", response_model=CompleteMfaResponse)
 @limiter.limit("5/minute")
 async def complete_mfa_login(
     request: Request,
     response: Response,
     data: CompleteMfaRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> TokenResponse:
+) -> CompleteMfaResponse:
     """Consume a password-verified login challenge and a TOTP or recovery code."""
     invalid = HTTPException(status_code=401, detail="Invalid or expired MFA challenge or code")
     record = await db.scalar(
@@ -477,10 +478,21 @@ async def complete_mfa_login(
         await db.commit()
         raise invalid
 
+    replacement_recovery_code = None
     if step is not None:
         factor.last_accepted_step = step
     else:
         used_recovery.used_at = now
+        replacement_recovery_code = generate_recovery_codes(1)[0]
+        db.add(
+            StaffMfaRecoveryCode(
+                user_id=user.id,
+                code_hash=hash_recovery_code(
+                    replacement_recovery_code, pepper=keys.recovery_pepper
+                ),
+                created_at=now,
+            )
+        )
     record.consumed_at = now
     _record_mfa_event(
         db,
@@ -497,7 +509,10 @@ async def complete_mfa_login(
     )
     refresh_token = await _create_browser_session(db, user, mfa_verified_at=now)
     _set_session_cookies(response, refresh_token)
-    return TokenResponse(access_token=access_token)
+    response.headers["Cache-Control"] = "no-store"
+    return CompleteMfaResponse(
+        access_token=access_token, replacement_recovery_code=replacement_recovery_code
+    )
 
 
 @router.post("/mfa/enroll/start", response_model=BeginMfaEnrollmentResponse)

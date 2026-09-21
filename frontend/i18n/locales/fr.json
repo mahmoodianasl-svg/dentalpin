@@ -58,6 +58,8 @@
     "mfaLoading": "Chargement du statut de vérification…",
     "mfaSaveCodes": "Enregistrez vos codes de récupération",
     "mfaSaveCodesHint": "Ces codes ne sont affichés qu’une fois. Conservez-les en lieu sûr ; chacun ne sert qu’une fois.",
+    "mfaReplacementTitle": "Enregistrez votre nouveau code de récupération",
+    "mfaReplacementHint": "Le code utilisé a été remplacé. Ce nouveau code ne s’affiche qu’une fois ; conservez-le avant de continuer.",
     "mfaSavedCodes": "J’ai enregistré mes codes",
     "mfaEnabled": "La vérification en deux étapes est activée.",
     "mfaCodesRemaining": "Codes de récupération restants : {count}",

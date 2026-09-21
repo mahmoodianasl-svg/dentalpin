@@ -48,6 +48,12 @@ class CompleteMfaRequest(BaseModel):
     code: str = Field(min_length=1, max_length=64)
 
 
+class CompleteMfaResponse(TokenResponse):
+    """A replacement recovery code is disclosed once when one was consumed."""
+
+    replacement_recovery_code: str | None = None
+
+
 class BeginMfaEnrollmentRequest(BaseModel):
     password: str = Field(min_length=1, max_length=1024)
 

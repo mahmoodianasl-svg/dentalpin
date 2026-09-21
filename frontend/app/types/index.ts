@@ -95,6 +95,10 @@ export interface PendingMfaResponse {
   expires_in: number
 }
 
+export interface MfaCompletionResponse extends AccessTokenResponse {
+  replacement_recovery_code: string | null
+}
+
 export interface MfaEnrollmentStartResponse {
   challenge: string
   secret: string

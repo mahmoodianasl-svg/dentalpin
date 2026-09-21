@@ -14,6 +14,7 @@ const isLoading = ref(false)
 // URL, cookie, Nuxt SSR state, or persistent browser storage.
 const pendingChallenge = ref<string | null>(null)
 const mfaCode = ref('')
+const replacementRecoveryCode = ref<string | null>(null)
 const formState = reactive({
   email: '',
   password: ''
@@ -105,17 +106,24 @@ async function onMfaSubmit() {
   errorMessage.value = ''
   isLoading.value = true
   try {
-    await auth.completeMfa(pendingChallenge.value, mfaCode.value.trim())
+    replacementRecoveryCode.value = await auth.completeMfa(pendingChallenge.value, mfaCode.value.trim())
     pendingChallenge.value = null
     mfaCode.value = ''
-    toast.add({ title: t('auth.loginSuccess'), color: 'success' })
-    await navigateTo('/')
+    if (!replacementRecoveryCode.value) {
+      toast.add({ title: t('auth.loginSuccess'), color: 'success' })
+      await navigateTo('/')
+    }
   } catch (error: unknown) {
     const status = (error as { statusCode?: number }).statusCode
     errorMessage.value = status === 401 ? t('auth.mfaInvalid') : mapError(error)
   } finally {
     isLoading.value = false
   }
+}
+
+async function acknowledgeReplacement() {
+  replacementRecoveryCode.value = null
+  await navigateTo('/')
 }
 
 function restartLogin() {
@@ -171,8 +179,31 @@ watch(() => formState.password, () => {
         </span>
       </div>
 
+      <div
+        v-if="replacementRecoveryCode"
+        class="space-y-4"
+      >
+        <h2 class="text-lg font-semibold text-default">
+          {{ t('auth.mfaReplacementTitle') }}
+        </h2>
+        <p class="text-caption text-muted">
+          {{ t('auth.mfaReplacementHint') }}
+        </p>
+        <p class="font-mono text-sm break-all rounded-token-md p-3 bg-muted select-all">
+          {{ replacementRecoveryCode }}
+        </p>
+        <UButton
+          type="button"
+          variant="soft"
+          block
+          @click="acknowledgeReplacement"
+        >
+          {{ t('auth.mfaSavedCodes') }}
+        </UButton>
+      </div>
+
       <form
-        v-if="!pendingChallenge"
+        v-else-if="!pendingChallenge"
         class="space-y-4"
         @submit.prevent="onSubmit"
       >
@@ -265,7 +296,7 @@ watch(() => formState.password, () => {
       </form>
     </UCard>
 
-    <DemoCredentialsHint v-if="!pendingChallenge" />
+    <DemoCredentialsHint v-if="!pendingChallenge && !replacementRecoveryCode" />
 
     <p class="text-center text-caption text-subtle mt-6">
       &copy; {{ new Date().getFullYear() }} DentalPin

@@ -67,6 +67,22 @@ describe('useAuth composable', () => {
   })
 
   describe('MFA login and enrollment', () => {
+    it('returns a one-time replacement after recovery login even if profile loading fails', async () => {
+      const request = vi.fn()
+        .mockResolvedValueOnce({ access_token: 'verified-session', replacement_recovery_code: 'new-code' })
+        .mockRejectedValueOnce(new Error('Profile temporarily unavailable'))
+      vi.stubGlobal('$fetch', request)
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      try {
+        const { useAuth } = await import('~/composables/useAuth')
+        const auth = useAuth()
+        expect(await auth.completeMfa('challenge', 'used-code')).toBe('new-code')
+        expect(auth.accessToken.value).toBe('verified-session')
+      } finally {
+        log.mockRestore()
+      }
+    })
+
     it('keeps a pending password challenge out of authenticated state', async () => {
       const request = vi.fn().mockResolvedValue({ mfa_required: true, challenge: 'pending-secret' })
       vi.stubGlobal('$fetch', request)

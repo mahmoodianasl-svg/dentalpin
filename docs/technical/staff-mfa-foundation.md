@@ -30,6 +30,10 @@ in this response; only keyed digests are persisted. The profile screen shows
 them once and asks the user to store them safely before leaving the screen.
 The browser login screen accepts an authenticator code or an unused recovery
 code after password verification. The pending challenge stays in page memory.
+When a recovery code is used, one new independently generated code replaces it
+in the same transaction as the consumed challenge and old code. The response
+shows that replacement once, before navigating away; no replacement secret is
+put in the audit row. An unavailable profile fetch must not hide the code.
 `/auth/mfa/status` returns enrollment state and the number of unused recovery
 codes for the authenticated staff profile screen.
 An enrolled staff member can rotate recovery codes at
@@ -51,8 +55,9 @@ of the authenticator and does not recover a lost device.
   completion handler locks the challenge before counting attempts or consuming it.
 - `staff_mfa_recovery_codes` stores only digests of independently generated,
   high-entropy, one-use codes. Login completion atomically marks use; issuing a
-  replacement on recovery-code login and notifying the account owner remain
-  rollout work.
+  replacement on recovery-code login is automatic. Owner notification remains
+  rollout work; the current notification gateway commits independently, so
+  security alerts need a durable transactionally queued delivery design.
 - `staff_mfa_audit_events` stores an account ID, fixed event type, and UTC
   timestamp for issued login challenges, rejected codes, successful TOTP or
   recovery-code verification, enrollment starts and confirmations, and recovery
@@ -66,8 +71,8 @@ of the authenticator and does not recover a lost device.
 The migrations do not backfill factors or silently enable MFA for existing
 accounts. Password-only login still issues full sessions for staff without an
 enrolled factor. Before production enforcement, finish the operator bootstrap
-for the first administrator, existing-account migration, automatic replacement
-and owner notification after recovery-code login, lost-device recovery, key
+for the first administrator, existing-account migration, owner notification
+after recovery-code login, lost-device recovery, key
 management, operational audit review and retention as tracked
 in [SEC-004 issue #62](https://github.com/mahmoodianasl-svg/dentalpin/issues/62).
 The first universal enforcement release must establish a controlled path for
