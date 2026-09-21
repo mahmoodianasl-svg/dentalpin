@@ -30,6 +30,8 @@ _RECOVERY_PEPPER_BYTES = 32
 _KEY_ID_CHARACTERS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
 MFA_CHALLENGE_LIFETIME = timedelta(minutes=5)
 MFA_CHALLENGE_MAX_ATTEMPTS = 5
+MFA_ACCOUNT_CHALLENGE_WINDOW = timedelta(minutes=10)
+MFA_ACCOUNT_MAX_FAILURES = 10
 MFA_CHALLENGE_PURPOSES = frozenset({"login", "enrollment", "recovery"})
 
 

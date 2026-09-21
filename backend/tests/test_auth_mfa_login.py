@@ -163,6 +163,39 @@ async def test_challenge_expires_and_limits_wrong_codes(
 
 
 @pytest.mark.asyncio
+async def test_new_challenges_cannot_reset_the_account_guess_budget(
+    client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await enroll(client, db_session, monkeypatch)
+    for _ in range(2):
+        token = await challenge(client)
+        for _ in range(5):
+            wrong = await client.post(
+                f"{PATH}/mfa/complete", json={"challenge": token, "code": "not-a-code"}
+            )
+            assert wrong.status_code == 401
+
+    fresh = await challenge(client)
+    blocked = await client.post(
+        f"{PATH}/mfa/complete", json={"challenge": fresh, "code": current_code()}
+    )
+    assert blocked.status_code == 429
+    records = (await db_session.scalars(select(StaffMfaChallenge))).all()
+    assert sorted(record.attempts for record in records) == [0, 5, 5]
+
+    # Aging the exhausted challenges out of the account window re-enables a
+    # still-valid challenge without bypassing its own expiry or attempt limit.
+    for record in records:
+        if record.attempts:
+            record.created_at = datetime.now(UTC) - timedelta(minutes=11)
+    await db_session.commit()
+    completed = await client.post(
+        f"{PATH}/mfa/complete", json={"challenge": fresh, "code": current_code()}
+    )
+    assert completed.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_recovery_code_is_consumed_once(
     client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

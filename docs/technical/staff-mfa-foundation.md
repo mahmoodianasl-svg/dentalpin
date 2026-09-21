@@ -12,6 +12,12 @@ verified browser session. Five failed attempts exhaust a challenge. Existing
 access tokens without MFA proof are rejected, and old refresh sessions are
 revoked on refresh. This PR must remain draft until SEC-004 rollout is complete.
 
+The enrolled factor row lock also enforces a ten-attempt budget across login
+challenges issued to the same account in the last ten minutes. A new password
+challenge cannot reset this budget; completion returns 429 until the older
+challenges leave the window. The per-challenge five-attempt and five-minute
+expiry checks still apply.
+
 Authenticated staff can start enrollment at `/auth/mfa/enroll/start` with a
 fresh password recheck. It returns a five-minute challenge and authenticator
 setup URI, stores the seed only as an encrypted envelope, and expires pending

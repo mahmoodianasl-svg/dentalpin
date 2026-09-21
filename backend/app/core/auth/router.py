@@ -23,6 +23,8 @@ from app.database import get_db
 
 from .dependencies import ClinicContext, get_clinic_context, get_current_user, require_permission
 from .mfa import (
+    MFA_ACCOUNT_CHALLENGE_WINDOW,
+    MFA_ACCOUNT_MAX_FAILURES,
     decrypt_totp_secret,
     encrypt_totp_secret,
     generate_recovery_codes,
@@ -397,6 +399,19 @@ async def complete_mfa_login(
     )
     if factor is None or factor.enrolled_at is None or user is None or not user.is_active:
         raise invalid
+
+    # The factor row lock serializes completions for different challenges on
+    # the same account. Count attempts across recent password-verified login
+    # challenges so issuing a fresh challenge cannot reset the guess budget.
+    failures = await db.scalar(
+        select(func.coalesce(func.sum(StaffMfaChallenge.attempts), 0)).where(
+            StaffMfaChallenge.user_id == user.id,
+            StaffMfaChallenge.purpose == "login",
+            StaffMfaChallenge.created_at > now - MFA_ACCOUNT_CHALLENGE_WINDOW,
+        )
+    )
+    if failures >= MFA_ACCOUNT_MAX_FAILURES:
+        raise HTTPException(status_code=429, detail="Too many MFA attempts")
 
     try:
         keys = load_staff_mfa_key_material(
