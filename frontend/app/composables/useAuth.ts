@@ -2,6 +2,11 @@ import type {
   User,
   LoginCredentials,
   AccessTokenResponse,
+  PendingMfaResponse,
+  MfaCompletionResponse,
+  MfaEnrollmentStartResponse,
+  MfaEnrollmentConfirmResponse,
+  MfaRecoveryRotationResponse,
   AuthResponse,
   MeResponse,
   ApiResponse
@@ -42,13 +47,19 @@ export function useAuth() {
   const isAuthenticated = computed(() => !!accessToken.value && !!user.value)
 
   // Actions
-  async function login(credentials: LoginCredentials): Promise<void> {
+  async function acceptAccessToken(token: string): Promise<void> {
+    accessToken.value = token
+    if (import.meta.client) refreshCookie('dentalpin_csrf')
+    await fetchUser()
+  }
+
+  async function login(credentials: LoginCredentials): Promise<PendingMfaResponse | null> {
     // OAuth2PasswordRequestForm expects form data with 'username' field
     const formData = new URLSearchParams()
     formData.append('username', credentials.email)
     formData.append('password', credentials.password)
 
-    const response = await $fetch<AccessTokenResponse>('/api/v1/auth/login', {
+    const response = await $fetch<AccessTokenResponse | PendingMfaResponse>('/api/v1/auth/login', {
       baseURL: apiBaseUrl.value,
       method: 'POST',
       body: formData,
@@ -58,11 +69,72 @@ export function useAuth() {
       }
     })
 
+    if ('mfa_required' in response) {
+      clearAuthState()
+      return response
+    }
+    await acceptAccessToken(response.access_token)
+    return null
+  }
+
+  async function completeMfa(challenge: string, code: string): Promise<string | null> {
+    const response = await $fetch<MfaCompletionResponse>('/api/v1/auth/mfa/complete', {
+      baseURL: apiBaseUrl.value,
+      method: 'POST',
+      body: { challenge, code },
+      credentials: 'include'
+    })
     accessToken.value = response.access_token
     if (import.meta.client) refreshCookie('dentalpin_csrf')
+    // The one-time code must reach the page even if /me temporarily fails.
+    try {
+      await fetchUser()
+    } catch {
+      // The verified session can retry profile loading after navigation.
+    }
+    return response.replacement_recovery_code ?? null
+  }
 
-    // Fetch user info after login
-    await fetchUser()
+  async function beginMfaEnrollment(password: string): Promise<MfaEnrollmentStartResponse> {
+    if (!accessToken.value) throw new Error('Authentication required')
+    return await $fetch<MfaEnrollmentStartResponse>('/api/v1/auth/mfa/enroll/start', {
+      baseURL: apiBaseUrl.value,
+      method: 'POST',
+      body: { password },
+      headers: { Authorization: `Bearer ${accessToken.value}` }
+    })
+  }
+
+  async function confirmMfaEnrollment(challenge: string, code: string): Promise<string[]> {
+    if (!accessToken.value) throw new Error('Authentication required')
+    const response = await $fetch<MfaEnrollmentConfirmResponse>('/api/v1/auth/mfa/enroll/confirm', {
+      baseURL: apiBaseUrl.value,
+      method: 'POST',
+      body: { challenge, code },
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${accessToken.value}` }
+    })
+    accessToken.value = response.access_token
+    if (import.meta.client) refreshCookie('dentalpin_csrf')
+    // Recovery codes are returned once. A transient /me failure must not
+    // prevent the caller from displaying them after confirmation succeeds.
+    try {
+      await fetchUser()
+    } catch {
+      // The verified session can retry profile loading on the next navigation.
+    }
+    return response.recovery_codes
+  }
+
+  async function rotateMfaRecoveryCodes(password: string, code: string): Promise<string[]> {
+    if (!accessToken.value) throw new Error('Authentication required')
+    const response = await $fetch<MfaRecoveryRotationResponse>('/api/v1/auth/mfa/recovery/rotate', {
+      baseURL: apiBaseUrl.value,
+      method: 'POST',
+      body: { password, code },
+      headers: { Authorization: `Bearer ${accessToken.value}` }
+    })
+    return response.recovery_codes
   }
 
   async function logout(): Promise<void> {
@@ -228,6 +300,10 @@ export function useAuth() {
     accessToken: readonly(accessToken),
     isAuthenticated,
     login,
+    completeMfa,
+    beginMfaEnrollment,
+    confirmMfaEnrollment,
+    rotateMfaRecoveryCodes,
     logout,
     refresh,
     fetchUser,

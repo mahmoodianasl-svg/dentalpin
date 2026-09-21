@@ -6,7 +6,8 @@ This implementation wave pins supported runtime families and converts active npm
 
 - Node: 24.19.0; frontend Docker variant bookworm-slim
 - Documentation portal builder: Node 24.19.0; Docker variant alpine3.24
-- Python: 3.11.15; Docker variant slim-trixie (CI/backend image)
+- Python: 3.11.15 for CI and dependency lock generation; the backend Docker
+  runtime uses security release 3.11.16 with the slim-trixie variant.
 - Backend lock generator: uv 0.12.1
 
 ## Backend locks
