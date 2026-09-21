@@ -4,7 +4,8 @@ Status: partial implementation — storage, cryptographic primitives, staff
 enrollment endpoints, and password-plus-MFA login; universal rollout pending.
 
 The `0008` migration adds three staff-only tables. The `0009` migration adds a
-verification timestamp to browser refresh sessions. Once a staff account has
+verification timestamp to browser refresh sessions. The `0010` migration adds
+an account-scoped MFA security event table. Once a staff account has
 an enrolled factor, password login returns a five-minute challenge without
 issuing access or refresh credentials. `/auth/mfa/complete` accepts a TOTP or
 unused recovery code, consumes the challenge under a row lock, and issues a
@@ -52,13 +53,22 @@ of the authenticator and does not recover a lost device.
   high-entropy, one-use codes. Login completion atomically marks use; issuing a
   replacement on recovery-code login and notifying the account owner remain
   rollout work.
+- `staff_mfa_audit_events` stores an account ID, fixed event type, and UTC
+  timestamp for issued login challenges, rejected codes, successful TOTP or
+  recovery-code verification, enrollment starts and confirmations, and recovery
+  rotation attempts. Rows are inserted in the same transaction as the
+  corresponding challenge, attempt count, factor state, or rotated code hashes.
+  No code, seed, password, challenge, network address, or free-form details
+  enter this table. Malformed, expired, or unknown challenges have no
+  attributable account and do not create an event. The table has no staff API;
+  operational access and retention policy need to be defined before rollout.
 
 The migrations do not backfill factors or silently enable MFA for existing
 accounts. Password-only login still issues full sessions for staff without an
 enrolled factor. Before production enforcement, finish the operator bootstrap
 for the first administrator, existing-account migration, automatic replacement
 and owner notification after recovery-code login, lost-device recovery, key
-management, and audit as tracked
+management, operational audit review and retention as tracked
 in [SEC-004 issue #62](https://github.com/mahmoodianasl-svg/dentalpin/issues/62).
 The first universal enforcement release must establish a controlled path for
 existing staff to enroll without a bypass to patient data.

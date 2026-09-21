@@ -2,7 +2,7 @@
 
 import secrets
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
@@ -40,6 +40,7 @@ from .models import (
     Clinic,
     ClinicMembership,
     RefreshSession,
+    StaffMfaAuditEvent,
     StaffMfaChallenge,
     StaffMfaFactor,
     StaffMfaRecoveryCode,
@@ -87,6 +88,27 @@ from .service import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+MfaEventType = Literal[
+    "enrollment_started",
+    "enrollment_code_rejected",
+    "enrollment_completed",
+    "login_challenge_issued",
+    "login_code_rejected",
+    "login_totp_verified",
+    "login_recovery_code_used",
+    "recovery_rotation_rejected",
+    "recovery_codes_rotated",
+]
+
+
+def _record_mfa_event(
+    db: AsyncSession, user_id: UUID, event_type: MfaEventType, *, now: datetime
+) -> None:
+    """Persist only a fixed event kind, account ID, and timestamp with the action."""
+    db.add(StaffMfaAuditEvent(user_id=user_id, event_type=event_type, created_at=now))
+
+
 # Rate limiting guards production. Dev + test disable it so local flows
 # (manual clicking, Playwright E2E, pytest) don't run into 5/minute
 # caps after a handful of reloads.
@@ -345,10 +367,10 @@ async def login(
         )
     )
     if enrolled is not None:
-        challenge, record = issue_pending_challenge(
-            user_id=user.id, purpose="login", now=datetime.now(UTC)
-        )
+        now = datetime.now(UTC)
+        challenge, record = issue_pending_challenge(user_id=user.id, purpose="login", now=now)
         db.add(record)
+        _record_mfa_event(db, user.id, "login_challenge_issued", now=now)
         await db.commit()
         response.headers["Cache-Control"] = "no-store"
         return PendingMfaResponse(challenge=challenge)
@@ -451,6 +473,7 @@ async def complete_mfa_login(
             )
     if step is None and used_recovery is None:
         record.attempts += 1
+        _record_mfa_event(db, user.id, "login_code_rejected", now=now)
         await db.commit()
         raise invalid
 
@@ -459,6 +482,12 @@ async def complete_mfa_login(
     else:
         used_recovery.used_at = now
     record.consumed_at = now
+    _record_mfa_event(
+        db,
+        user.id,
+        "login_totp_verified" if step is not None else "login_recovery_code_used",
+        now=now,
+    )
     # Persist one-use state before any credential leaves the process.
     await db.commit()
 
@@ -528,6 +557,7 @@ async def begin_mfa_enrollment(
     )
     challenge, record = issue_pending_challenge(user_id=user.id, purpose="enrollment", now=now)
     db.add(record)
+    _record_mfa_event(db, user.id, "enrollment_started", now=now)
     await db.commit()
     response.headers["Cache-Control"] = "no-store"
     issuer = "DentalPin"
@@ -600,6 +630,7 @@ async def confirm_mfa_enrollment(
     step = verify_totp(secret, data.code, at=now)
     if step is None:
         record.attempts += 1
+        _record_mfa_event(db, user.id, "enrollment_code_rejected", now=now)
         await db.commit()
         raise invalid
 
@@ -622,6 +653,7 @@ async def confirm_mfa_enrollment(
         .where(RefreshSession.user_id == user.id, RefreshSession.revoked_at.is_(None))
         .values(revoked_at=now)
     )
+    _record_mfa_event(db, user.id, "enrollment_completed", now=now)
     # The session helper commits enrollment, recovery digests, and the new session
     # as one transaction before either credentials or recovery codes are returned.
     refresh_token = await _create_browser_session(db, user, mfa_verified_at=now)
@@ -679,6 +711,8 @@ async def rotate_mfa_recovery_codes(
         raise HTTPException(status_code=409, detail="MFA is not enrolled")
     user = await db.scalar(select(User).where(User.id == current_user.id))
     if user is None or not user.is_active or not verify_password(data.password, user.password_hash):
+        _record_mfa_event(db, current_user.id, "recovery_rotation_rejected", now=datetime.now(UTC))
+        await db.commit()
         raise invalid
     try:
         keys = load_staff_mfa_key_material(
@@ -700,6 +734,8 @@ async def rotate_mfa_recovery_codes(
     now = datetime.now(UTC)
     step = verify_totp(secret, data.code, at=now, last_accepted_step=factor.last_accepted_step)
     if step is None:
+        _record_mfa_event(db, user.id, "recovery_rotation_rejected", now=now)
+        await db.commit()
         raise invalid
     codes = generate_recovery_codes()
     await db.execute(delete(StaffMfaRecoveryCode).where(StaffMfaRecoveryCode.user_id == user.id))
@@ -712,6 +748,7 @@ async def rotate_mfa_recovery_codes(
         for code in codes
     )
     factor.last_accepted_step = step
+    _record_mfa_event(db, user.id, "recovery_codes_rotated", now=now)
     await db.commit()
     response.headers["Cache-Control"] = "no-store"
     return RotateMfaRecoveryCodesResponse(recovery_codes=codes)

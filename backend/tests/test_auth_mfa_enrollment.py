@@ -12,6 +12,7 @@ from app.config import settings
 from app.core.auth.mfa import _totp_for_step, generate_encryption_key
 from app.core.auth.models import (
     RefreshSession,
+    StaffMfaAuditEvent,
     StaffMfaChallenge,
     StaffMfaFactor,
     StaffMfaRecoveryCode,
@@ -114,6 +115,22 @@ async def test_recovery_rotation_requires_step_up_and_invalidates_old_codes(
         f"{PATH}/mfa/complete", json={"challenge": await pending_login(), "code": new_codes[0]}
     )
     assert accepted.status_code == 200
+    events = (
+        await db_session.scalars(select(StaffMfaAuditEvent).order_by(StaffMfaAuditEvent.created_at))
+    ).all()
+    types = [event.event_type for event in events]
+    assert types.count("recovery_rotation_rejected") == 3
+    assert types.count("recovery_codes_rotated") == 1
+    assert types.count("login_recovery_code_used") == 1
+    assert "login_code_rejected" in types
+    assert all(event.user_id and event.created_at for event in events)
+    # The audit schema has no free-form payload for codes, seeds, or passwords.
+    assert set(StaffMfaAuditEvent.__table__.columns.keys()) == {
+        "id",
+        "user_id",
+        "event_type",
+        "created_at",
+    }
 
 
 @pytest.mark.asyncio
@@ -157,6 +174,10 @@ async def test_enrollment_revokes_old_sessions_and_returns_recovery_codes_once(
     await db_session.refresh(factor)
     assert factor.enrolled_at and factor.pending_expires_at is None
     assert factor.last_accepted_step is not None
+    events = (
+        await db_session.scalars(select(StaffMfaAuditEvent).order_by(StaffMfaAuditEvent.created_at))
+    ).all()
+    assert [event.event_type for event in events] == ["enrollment_started", "enrollment_completed"]
 
     old_token = await client.get(f"{PATH}/me", headers=headers)
     assert old_token.status_code == 401

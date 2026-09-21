@@ -18,6 +18,7 @@ from app.core.auth.mfa import (
 )
 from app.core.auth.models import (
     RefreshSession,
+    StaffMfaAuditEvent,
     StaffMfaChallenge,
     StaffMfaFactor,
     StaffMfaRecoveryCode,
@@ -127,6 +128,15 @@ async def test_enrolled_account_requires_mfa_on_access_refresh_and_login(
         f"{PATH}/mfa/complete", json={"challenge": repeated_code, "code": used_code}
     )
     assert repeated.status_code == 401
+    events = (
+        await db_session.scalars(select(StaffMfaAuditEvent).order_by(StaffMfaAuditEvent.created_at))
+    ).all()
+    assert [event.event_type for event in events] == [
+        "login_challenge_issued",
+        "login_totp_verified",
+        "login_challenge_issued",
+        "login_code_rejected",
+    ]
 
 
 @pytest.mark.asyncio
