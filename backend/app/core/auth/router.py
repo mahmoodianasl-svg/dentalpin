@@ -12,7 +12,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from sqlalchemy import func, select, text, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -65,6 +65,8 @@ from .schemas import (
     MeResponse,
     PendingMfaResponse,
     ProfessionalResponse,
+    RotateMfaRecoveryCodesRequest,
+    RotateMfaRecoveryCodesResponse,
     SetupStatusResponse,
     StaffMfaStatusResponse,
     SystemSetup,
@@ -657,6 +659,62 @@ async def staff_mfa_status(
             or 0
         )
     return StaffMfaStatusResponse(enrolled=enrolled is not None, recovery_codes_remaining=remaining)
+
+
+@router.post("/mfa/recovery/rotate", response_model=RotateMfaRecoveryCodesResponse)
+@limiter.limit("5/minute", key_func=_mfa_enrollment_rate_key)
+async def rotate_mfa_recovery_codes(
+    request: Request,
+    response: Response,
+    data: RotateMfaRecoveryCodesRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> RotateMfaRecoveryCodesResponse:
+    """Replace every recovery code after password and fresh TOTP step-up."""
+    invalid = HTTPException(status_code=401, detail="Invalid credentials or authenticator code")
+    factor = await db.scalar(
+        select(StaffMfaFactor).where(StaffMfaFactor.user_id == current_user.id).with_for_update()
+    )
+    if factor is None or factor.enrolled_at is None:
+        raise HTTPException(status_code=409, detail="MFA is not enrolled")
+    user = await db.scalar(select(User).where(User.id == current_user.id))
+    if user is None or not user.is_active or not verify_password(data.password, user.password_hash):
+        raise invalid
+    try:
+        keys = load_staff_mfa_key_material(
+            key_id=settings.MFA_ENCRYPTION_KEY_ID,
+            encoded_encryption_key=settings.MFA_ENCRYPTION_KEY,
+            encoded_recovery_pepper=settings.MFA_RECOVERY_PEPPER,
+        )
+        if keys.key_id != factor.key_id:
+            raise ValueError("MFA encryption key id mismatch")
+        secret = decrypt_totp_secret(
+            factor.encrypted_secret,
+            user_id=user.id,
+            key_id=factor.key_id,
+            encoded_key=keys.encoded_encryption_key,
+        )
+    except (InvalidTag, UnicodeError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="Staff MFA is unavailable") from exc
+
+    now = datetime.now(UTC)
+    step = verify_totp(secret, data.code, at=now, last_accepted_step=factor.last_accepted_step)
+    if step is None:
+        raise invalid
+    codes = generate_recovery_codes()
+    await db.execute(delete(StaffMfaRecoveryCode).where(StaffMfaRecoveryCode.user_id == user.id))
+    db.add_all(
+        StaffMfaRecoveryCode(
+            user_id=user.id,
+            code_hash=hash_recovery_code(code, pepper=keys.recovery_pepper),
+            created_at=now,
+        )
+        for code in codes
+    )
+    factor.last_accepted_step = step
+    await db.commit()
+    response.headers["Cache-Control"] = "no-store"
+    return RotateMfaRecoveryCodesResponse(recovery_codes=codes)
 
 
 @router.post("/refresh", response_model=AuthResponse)

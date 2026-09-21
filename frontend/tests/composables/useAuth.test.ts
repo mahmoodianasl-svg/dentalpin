@@ -99,5 +99,24 @@ describe('useAuth composable', () => {
         log.mockRestore()
       }
     })
+
+    it('replaces recovery codes using the in-memory access token', async () => {
+      const request = vi.fn()
+        .mockResolvedValueOnce({ access_token: 'verified-session' })
+        .mockResolvedValueOnce({ data: { user: { id: 'staff' }, permissions: [] } })
+        .mockResolvedValueOnce({ recovery_codes: ['new-code'] })
+      vi.stubGlobal('$fetch', request)
+      const { useAuth } = await import('~/composables/useAuth')
+      const auth = useAuth()
+      await auth.login({ email: 'staff@example.test', password: 'password' })
+
+      expect(await auth.rotateMfaRecoveryCodes('password', '123456')).toEqual(['new-code'])
+      expect(request).toHaveBeenLastCalledWith('/api/v1/auth/mfa/recovery/rotate',
+        expect.objectContaining({
+          body: { password: 'password', code: '123456' },
+          headers: { Authorization: 'Bearer verified-session' }
+        }))
+      expect(auth.accessToken.value).toBe('verified-session')
+    })
   })
 })

@@ -10,6 +10,9 @@ const pending = ref<MfaEnrollmentStartResponse | null>(null)
 const recoveryCodes = ref<string[]>([])
 const password = ref('')
 const confirmationCode = ref('')
+const rotationOpen = ref(false)
+const rotationPassword = ref('')
+const rotationCode = ref('')
 const busy = ref(false)
 const errorMessage = ref('')
 
@@ -28,6 +31,8 @@ onUnmounted(() => {
   recoveryCodes.value = []
   password.value = ''
   confirmationCode.value = ''
+  rotationPassword.value = ''
+  rotationCode.value = ''
 })
 
 async function startEnrollment() {
@@ -66,6 +71,31 @@ async function confirmEnrollment() {
 
 function dismissRecoveryCodes() {
   recoveryCodes.value = []
+}
+
+async function rotateRecoveryCodes() {
+  if (!rotationPassword.value || !rotationCode.value.trim() || busy.value) return
+  errorMessage.value = ''
+  busy.value = true
+  try {
+    recoveryCodes.value = await auth.rotateMfaRecoveryCodes(
+      rotationPassword.value, rotationCode.value.trim()
+    )
+    status.value = { enrolled: true, recovery_codes_remaining: recoveryCodes.value.length }
+    cancelRotation()
+  } catch (error: unknown) {
+    const code = (error as { statusCode?: number }).statusCode
+    errorMessage.value = code === 401 ? t('auth.mfaRotateInvalid') : t('auth.mfaUnavailable')
+  } finally {
+    busy.value = false
+  }
+}
+
+function cancelRotation() {
+  rotationOpen.value = false
+  rotationPassword.value = ''
+  rotationCode.value = ''
+  errorMessage.value = ''
 }
 
 function restartEnrollment() {
@@ -158,6 +188,65 @@ function restartEnrollment() {
         <p class="text-caption text-muted">
           {{ t('auth.mfaCodesRemaining', { count: status.recovery_codes_remaining }) }}
         </p>
+        <form
+          v-if="rotationOpen"
+          class="space-y-3"
+          @submit.prevent="rotateRecoveryCodes"
+        >
+          <p class="text-caption text-muted">
+            {{ t('auth.mfaRotateHint') }}
+          </p>
+          <UFormField
+            :label="t('auth.password')"
+            name="rotationPassword"
+          >
+            <UInput
+              v-model="rotationPassword"
+              type="password"
+              autocomplete="current-password"
+              class="w-full"
+              :disabled="busy"
+            />
+          </UFormField>
+          <UFormField
+            :label="t('auth.mfaCode')"
+            name="rotationCode"
+          >
+            <UInput
+              v-model="rotationCode"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              maxlength="6"
+              class="w-full"
+              :disabled="busy"
+            />
+          </UFormField>
+          <div class="flex gap-2">
+            <UButton
+              type="submit"
+              :loading="busy"
+              :disabled="busy || !rotationPassword || rotationCode.trim().length !== 6"
+            >
+              {{ t('auth.mfaRotateAction') }}
+            </UButton>
+            <UButton
+              type="button"
+              variant="ghost"
+              :disabled="busy"
+              @click="cancelRotation"
+            >
+              {{ t('actions.cancel') }}
+            </UButton>
+          </div>
+        </form>
+        <UButton
+          v-else
+          type="button"
+          variant="soft"
+          @click="rotationOpen = true"
+        >
+          {{ t('auth.mfaRotateAction') }}
+        </UButton>
       </template>
 
       <form

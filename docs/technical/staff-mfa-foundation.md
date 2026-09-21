@@ -31,6 +31,13 @@ The browser login screen accepts an authenticator code or an unused recovery
 code after password verification. The pending challenge stays in page memory.
 `/auth/mfa/status` returns enrollment state and the number of unused recovery
 codes for the authenticated staff profile screen.
+An enrolled staff member can rotate recovery codes at
+`/auth/mfa/recovery/rotate` using the current password and a fresh, non-replayed
+authenticator code. The factor row lock serializes this step-up with other MFA
+operations. Rotation deletes every old recovery-code digest and inserts ten new
+ones in one transaction. The profile shows the replacement codes only once;
+old codes stop working immediately. This self-service path requires possession
+of the authenticator and does not recover a lost device.
 
 - `staff_mfa_factors` has one row per staff user. `encrypted_secret` must hold
   only an authenticated-encryption envelope, never a raw TOTP seed; `key_id`
@@ -43,13 +50,15 @@ codes for the authenticated staff profile screen.
   completion handler locks the challenge before counting attempts or consuming it.
 - `staff_mfa_recovery_codes` stores only digests of independently generated,
   high-entropy, one-use codes. Login completion atomically marks use; issuing a
-  replacement and notifying the account owner remain rollout work.
+  replacement on recovery-code login and notifying the account owner remain
+  rollout work.
 
 The migrations do not backfill factors or silently enable MFA for existing
 accounts. Password-only login still issues full sessions for staff without an
 enrolled factor. Before production enforcement, finish the operator bootstrap
-for the first administrator, existing-account migration, recovery replacement
-and notification, key management, and audit as tracked
+for the first administrator, existing-account migration, automatic replacement
+and owner notification after recovery-code login, lost-device recovery, key
+management, and audit as tracked
 in [SEC-004 issue #62](https://github.com/mahmoodianasl-svg/dentalpin/issues/62).
 The first universal enforcement release must establish a controlled path for
 existing staff to enroll without a bypass to patient data.

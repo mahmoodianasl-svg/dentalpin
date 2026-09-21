@@ -62,7 +62,10 @@
     "mfaEnabled": "A verificação em duas etapas está ativada.",
     "mfaCodesRemaining": "Códigos de recuperação restantes: {count}",
     "mfaStart": "Configurar autenticador",
-    "mfaSetupHint": "Adicione esta chave ao seu aplicativo autenticador e insira o código de seis dígitos."
+    "mfaSetupHint": "Adicione esta chave ao seu aplicativo autenticador e insira o código de seis dígitos.",
+    "mfaRotateAction": "Substituir códigos de recuperação",
+    "mfaRotateHint": "Insira sua senha e um novo código do aplicativo autenticador. Todos os códigos de recuperação anteriores deixarão de funcionar imediatamente.",
+    "mfaRotateInvalid": "Senha ou código do autenticador incorreto. Tente novamente."
   },
   "setup": {
     "title": "Configuração inicial",

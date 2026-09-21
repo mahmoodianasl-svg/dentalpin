@@ -111,6 +111,10 @@ export interface MfaStatusResponse {
   recovery_codes_remaining: number
 }
 
+export interface MfaRecoveryRotationResponse {
+  recovery_codes: string[]
+}
+
 export interface AuthResponse extends AccessTokenResponse {
   user: User
   clinics: Array<{ id: string, name: string, role: string }>

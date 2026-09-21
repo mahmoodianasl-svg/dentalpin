@@ -52,6 +52,71 @@ def code_for(secret: str) -> str:
 
 
 @pytest.mark.asyncio
+async def test_recovery_rotation_requires_step_up_and_invalidates_old_codes(
+    client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    headers = await setup(client, monkeypatch)
+    started = (
+        await client.post(f"{PATH}/mfa/enroll/start", json={"password": PASSWORD}, headers=headers)
+    ).json()
+    confirmed = await client.post(
+        f"{PATH}/mfa/enroll/confirm",
+        json={"challenge": started["challenge"], "code": code_for(started["secret"])},
+        headers=headers,
+    )
+    assert confirmed.status_code == 200
+    old_codes = confirmed.json()["recovery_codes"]
+    verified = {"Authorization": f"Bearer {confirmed.json()['access_token']}"}
+    next_step = int(datetime.now(UTC).timestamp()) // 30 + 1
+    next_code = _totp_for_step(base64.b32decode(started["secret"]), next_step)
+    url = f"{PATH}/mfa/recovery/rotate"
+
+    assert (
+        await client.post(url, json={"password": PASSWORD, "code": next_code}, headers=headers)
+    ).status_code == 401
+
+    assert (
+        await client.post(url, json={"password": "wrong", "code": next_code}, headers=verified)
+    ).status_code == 401
+    assert (
+        await client.post(url, json={"password": PASSWORD, "code": "xxxxxx"}, headers=verified)
+    ).status_code == 401
+    assert (await client.get(f"{PATH}/mfa/status", headers=verified)).json()[
+        "recovery_codes_remaining"
+    ] == 10
+
+    rotated = await client.post(
+        url, json={"password": PASSWORD, "code": next_code}, headers=verified
+    )
+    assert rotated.status_code == 200
+    assert rotated.headers["cache-control"] == "no-store"
+    new_codes = rotated.json()["recovery_codes"]
+    assert len(set(new_codes)) == 10 and not set(new_codes).intersection(old_codes)
+    stored = (await db_session.scalars(select(StaffMfaRecoveryCode))).all()
+    assert len(stored) == 10
+    assert all(old not in row.code_hash for old in old_codes for row in stored)
+    assert (
+        await client.post(url, json={"password": PASSWORD, "code": next_code}, headers=verified)
+    ).status_code == 401
+
+    async def pending_login() -> str:
+        response = await client.post(
+            f"{PATH}/login", data={"username": SETUP["admin_email"], "password": PASSWORD}
+        )
+        assert response.status_code == 200
+        return response.json()["challenge"]
+
+    rejected = await client.post(
+        f"{PATH}/mfa/complete", json={"challenge": await pending_login(), "code": old_codes[0]}
+    )
+    assert rejected.status_code == 401
+    accepted = await client.post(
+        f"{PATH}/mfa/complete", json={"challenge": await pending_login(), "code": new_codes[0]}
+    )
+    assert accepted.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_enrollment_revokes_old_sessions_and_returns_recovery_codes_once(
     client: AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

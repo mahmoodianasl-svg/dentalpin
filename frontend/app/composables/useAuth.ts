@@ -5,6 +5,7 @@ import type {
   PendingMfaResponse,
   MfaEnrollmentStartResponse,
   MfaEnrollmentConfirmResponse,
+  MfaRecoveryRotationResponse,
   AuthResponse,
   MeResponse,
   ApiResponse
@@ -113,6 +114,17 @@ export function useAuth() {
     } catch {
       // The verified session can retry profile loading on the next navigation.
     }
+    return response.recovery_codes
+  }
+
+  async function rotateMfaRecoveryCodes(password: string, code: string): Promise<string[]> {
+    if (!accessToken.value) throw new Error('Authentication required')
+    const response = await $fetch<MfaRecoveryRotationResponse>('/api/v1/auth/mfa/recovery/rotate', {
+      baseURL: apiBaseUrl.value,
+      method: 'POST',
+      body: { password, code },
+      headers: { Authorization: `Bearer ${accessToken.value}` }
+    })
     return response.recovery_codes
   }
 
@@ -282,6 +294,7 @@ export function useAuth() {
     completeMfa,
     beginMfaEnrollment,
     confirmMfaEnrollment,
+    rotateMfaRecoveryCodes,
     logout,
     refresh,
     fetchUser,

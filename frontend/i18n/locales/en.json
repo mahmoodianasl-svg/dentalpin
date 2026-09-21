@@ -62,7 +62,10 @@
     "mfaEnabled": "Two-step verification is enabled.",
     "mfaCodesRemaining": "Recovery codes remaining: {count}",
     "mfaStart": "Set up authenticator",
-    "mfaSetupHint": "Add this secret to your authenticator app, then enter its six-digit code."
+    "mfaSetupHint": "Add this secret to your authenticator app, then enter its six-digit code.",
+    "mfaRotateAction": "Replace recovery codes",
+    "mfaRotateHint": "Enter your password and a fresh authenticator code. All existing recovery codes will stop working immediately.",
+    "mfaRotateInvalid": "Incorrect password or authenticator code. Try again."
   },
   "setup": {
     "title": "First-time setup",

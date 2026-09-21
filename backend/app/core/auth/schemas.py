@@ -77,6 +77,17 @@ class StaffMfaStatusResponse(BaseModel):
     recovery_codes_remaining: int
 
 
+class RotateMfaRecoveryCodesRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=1024)
+    code: str = Field(min_length=6, max_length=6)
+
+
+class RotateMfaRecoveryCodesResponse(BaseModel):
+    """Replacement secrets are returned only in the successful response."""
+
+    recovery_codes: list[str]
+
+
 class UserResponse(BaseModel):
     """Schema for user response."""
 
